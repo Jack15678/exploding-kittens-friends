@@ -14,10 +14,19 @@ export function commandIsCurrent(g, message) {
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const roomCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map(n => alphabet[n % alphabet.length]).join('');
 function options() {
-  const url = import.meta.env?.VITE_TURN_URL;
-  return url ? { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: url,
-    username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] } } : {};
+  const urls = (import.meta.env?.VITE_TURN_URL || '').split(',').map(url => url.trim()).filter(Boolean);
+  // PeerJS 1.5.5 defaults still include its discontinued public TURN service.
+  return { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(urls.length ? [{ urls,
+    username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] : [])] } };
 }
+const CONNECTION_ISSUES = {
+  'peer-unavailable': '暂时找不到这个房间。请核对房间码，并让房主保持网页打开。',
+  signaling: '暂时连不上房间联络服务，请检查网络；房主也需要保持网页打开。',
+  'connection-timeout': '两端网络没能建立连接。可以先用电脑建房、手机加入，或换一个网络再试。',
+  'connection-lost': '与房主的连接中断了。正在尝试恢复，请让房主保持网页打开。',
+  'unavailable-id': '房间码正在被另一个页面使用。请关闭重复打开的房主页面。',
+  browser: '当前浏览器无法建立联机连接，请尝试使用最新版 Chrome 或 Safari。',
+};
 export class Room {
   constructor({ role, name, code = '', saved, onChange, onNotice }) {
     this.role = saved?.role || role; this.room = saved?.room || (role === 'host' ? roomCode() : code.toUpperCase());
@@ -26,6 +35,7 @@ export class Room {
     this.game = saved?.game || (this.role !== 'guest' ? createGame(this.me, name) : null);
     this.view = saved?.view || (this.game ? viewFor(this.game, this.me) : null);
     this.status = this.role === 'practice' ? 'connected' : 'connecting';
+    this.connectionIssue = '';
     this.connections = new Map(); this.transport = null; this.stopped = false; this.pending = false;
     try {
       this.token = sessionStorage.getItem(TOKEN_KEY) || crypto.randomUUID(); sessionStorage.setItem(TOKEN_KEY, this.token);
@@ -37,6 +47,7 @@ export class Room {
     if (!ROOM_PATTERN.test(this.room)) throw new Error('房间码需要 8 位字母或数字。');
     this.transport = createRoomTransport({ Peer, host: this.role === 'host', room: this.room, options: options(),
       onStatus: status => this.networkStatus(status),
+      onIssue: issue => this.networkIssue(issue),
       onOpen: () => { this.transport.send({ type: 'join', token: this.token, name: this.name, version: 1 }); },
       onData: message => this.receive(message),
       onConnection: (conn, current) => this.accept(conn, current),
@@ -54,6 +65,12 @@ export class Room {
       }
       this.publish();
     } else this.changed();
+  }
+  networkIssue(issue) {
+    if (this.stopped) return;
+    const message = issue ? CONNECTION_ISSUES[issue] || CONNECTION_ISSUES['connection-timeout'] : '';
+    if (message === this.connectionIssue) return;
+    this.connectionIssue = message; this.changed();
   }
   changed() { if (!this.stopped) this.onChange(this); }
   persist() {
@@ -89,7 +106,7 @@ export class Room {
     if (this.connections.size >= 8) { conn.close(); return; }
     let id = null;
     const valid = () => current() && !this.stopped;
-    const timeout = setTimeout(() => { if (!id) conn.close(); }, 12000);
+    const timeout = setTimeout(() => { if (!id) conn.close(); }, 45000);
     conn.on('data', message => {
       if (!valid()) return;
       try {

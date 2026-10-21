@@ -76,3 +76,17 @@ test('guest session holds only its view; host identity and invitation mismatch a
   assert.ok(sessionStorage.getItem(TOKEN_KEY));
   a.conn.close(); room.stop();
 });
+
+test('host allows a slow incoming handshake and clears a recovered connection hint', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const room = host(), conn = new Connection();
+  t.after(() => { conn.close(); room.stop(); });
+  room.accept(conn, () => true);
+  t.mock.timers.tick(20000);
+  assert.equal(conn.open, true);
+  conn.emit('data', { type: 'join', token: crypto.randomUUID(), name: '慢一点的小猫', version: 1 });
+  assert.equal(room.game.players.length, 2);
+  room.networkIssue('connection-timeout'); assert.match(room.connectionIssue, /两端网络/);
+  room.networkIssue(null); assert.equal(room.connectionIssue, '');
+  t.mock.timers.tick(60000); assert.equal(conn.open, true);
+});

@@ -61,8 +61,12 @@ function handMarkup(cards = []) {
   }).join('');
 }
 function header() {
-  const online = room?.status === 'connected';
+  const online = room?.status === 'connected' && !room?.connectionIssue;
   return `<header class="topbar"><a class="brand" href="${escape(location.pathname)}" ${room ? 'data-act="ask-leave"' : ''}><span class="brand-cat">${catArt('peach', 'paw', 1)}</span><span>爆炸猫<span class="brand-sub">好友厨房</span></span></a><nav>${room ? `<span class="connection ${online ? '' : 'reconnecting'}">${room.role === 'practice' ? '陪练在场' : online ? '已连接' : '正在连接…'}</span>${button('邀请', 'invite', 'quiet', room.role === 'practice')}` : ''}${button('玩法', 'rules', 'quiet')}${button(room ? '离开' : '食谱', room ? 'ask-leave' : 'recipes', 'quiet')}</nav></header>`;
+}
+function connectingScreen() {
+  const issue = room.connectionIssue;
+  return `<div class="room-screen">${header()}<div class="connecting-screen">${catArt('sky', 'paw', 1)}<h1>${issue ? '暂时没连上朋友' : '正在找朋友的厨房…'}</h1><p>房间 ${escape(room.room)}</p><p class="connection-help" role="status">${issue ? `${escape(issue)} 正在自动重试。` : '首次连接可能需要几十秒，请让房主保持网页打开。'}</p><div class="connection-actions">${issue ? button('立即重试', 'retry-connection', 'primary') : ''}${button('取消连接', 'leave', 'secondary')}</div></div></div>`;
 }
 function home() {
   return `<div class="home-screen">${header()}<section class="home-content"><div class="home-copy"><p class="handwritten">小心，这间厨房有点炸。</p><h1>今晚，<br>一起炸毛吧。</h1><p class="intro">挑一道灾难食谱，喊上你的朋友。<br>偷点好牌，藏点坏心思，做最后一只猫。</p><div class="home-form"><label for="nickname">今天怎么称呼你？</label><input id="nickname" maxlength="16" value="${escape(nickname)}" autocomplete="off" placeholder="给自己起个猫咪昵称"/><div class="home-actions">${button('开一间好友厨房 <span aria-hidden="true">↗</span>', 'create', 'primary large')}${button('加入朋友的房间', 'join-toggle', 'secondary large')}</div>${joinOpen ? `<form id="join-form" class="join-form"><label class="sr-only" for="room-input">八位房间码</label><input id="room-input" maxlength="8" value="${escape(invitedRoom)}" placeholder="输入 8 位房间码" autocomplete="off" autocapitalize="characters"/><button class="primary" type="submit">加入</button></form>` : ''}${button('先和猫咪陪练玩一局 <span aria-hidden="true">→</span>', 'practice', 'practice-link')}</div><p class="home-note">2–5 位朋友 · 无需注册 · 手机也能玩</p></div><div class="home-art" aria-hidden="true"><div class="recipe-note"><span>今日主厨推荐</span><strong>拆弹配小鱼干</strong><span>危险程度：刚刚好</span><svg viewBox="0 0 100 35"><path d="M5 18q20-28 40 0T85 18" fill="none" stroke="currentColor" stroke-width="3"/></svg></div><div class="art-plate"></div><div class="hero-cat">${catArt('peach', 'bomb', 1, true)}</div><div class="hero-friend">${catArt('mint', 'snip', 0)}</div><div class="hero-card one">${cardBack()}</div><div class="hero-card two">${cardBack()}</div><span class="art-caption">这次绝对不是我放的。</span></div></section><footer class="home-footer"><span>一桌朋友，一点小坏心。</span><span>非官方好友同乐版 · 原创猫咪插画</span></footer></div>`;
@@ -154,7 +158,8 @@ function render() {
   const modalScroll = $('.modal')?.scrollTop || 0;
   const previousModal = !!$('.modal');
   if (room?.view) selected = selected.filter(id => me()?.hand?.some(c => c.id === id));
-  const content = !room ? home() : !room.view ? `<div class="room-screen">${header()}<div class="connecting-screen">${catArt('sky', 'paw', 1)}<h1>正在找朋友的厨房…</h1><p>房间 ${escape(room.room)} · 首次连接可能需要几秒。</p>${button('取消连接', 'leave', 'secondary')}</div></div>` : room.view.phase === 'lobby' ? lobby() : gameScreen();
+  let content = !room ? home() : !room.view ? connectingScreen() : room.view.phase === 'lobby' ? lobby() : gameScreen();
+  if (room?.view && room.connectionIssue) content = content.replace('</header>', `</header><div class="connection-banner" role="status">${escape(room.connectionIssue)} 正在自动重试。 ${button('立即重试', 'retry-connection', 'quiet')}</div>`);
   $('#app').innerHTML = content + dialog();
   document.body.dataset.phase = room?.view?.phase || 'home'; document.body.dataset.connection = room?.status || 'home';
   if ($('.modal')) $('.modal').scrollTop = modalScroll;
@@ -189,6 +194,7 @@ $('#app').addEventListener('click', async event => {
   else if (action === 'close-modal') { modal = null; render(); }
   else if (action === 'ask-leave') { modal = 'leave'; render(); }
   else if (action === 'leave') { room?.stop(); changed(null); }
+  else if (action === 'retry-connection') room?.transport?.wake();
   else if (action === 'add-bot') room.addBot();
   else if (action === 'remove') room.removePlayer(el.dataset.id);
   else if (action === 'start') send({ type: 'start', recipeId: room.view.recipeId });

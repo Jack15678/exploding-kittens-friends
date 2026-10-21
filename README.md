@@ -35,7 +35,9 @@ npm run dev
 
 代码仓库：[Jack15678/exploding-kittens-friends](https://github.com/Jack15678/exploding-kittens-friends)。`.github/workflows/pages.yml` 在推送 `main` 时执行规则测试、构建并部署；GitHub 仓库 Settings → Pages → Source 使用 **GitHub Actions**。Vite 使用相对资源路径，兼容项目子目录。
 
-默认使用 PeerJS 的公共信令服务和默认 ICE 配置。部分校园网、公司网或移动网络可能需要 TURN。可参考 `.env.example` 配置自己的服务后重新构建；前端的 `VITE_*` 值会进入构建产物，不能在其中放长期管理密钥。
+默认使用 PeerJS 的公共信令服务与 Google STUN。PeerJS 1.5.5 内置的旧公共 TURN 地址对应服务[已停用](https://github.com/orgs/peers/discussions/1172)，本项目不再使用这些地址。部分校园网、公司网或移动网络需要可用的 TURN 中继；连接超时或房间暂时找不到时，页面会说明原因并允许立即重试。
+
+参考 `.env.example` 配置自己的 TURN 后重新构建；`VITE_TURN_URL` 可用逗号分隔同一服务的 UDP、TCP、TLS 地址。GitHub Pages 构建从仓库 Actions Variables 读取 `VITE_TURN_URL`、`VITE_TURN_USERNAME`，从 Actions Secrets 读取 `VITE_TURN_CREDENTIAL`。这些前端配置最终仍会进入公开构建产物，只能填写服务商允许浏览器使用的 TURN 用户凭据，不能填写管理 API 密钥或服务器共享密钥。当前发布站尚未配置专用 TURN，手机跨网络建房仍需接入服务并实测。
 
 没有账号系统、云端存档或房主迁移。关闭房主标签页后，房间暂时不可用；原标签页恢复才可继续。主动「关闭厨房」会结束房间。无痕窗口关闭、清除站点数据或存储被禁用时，无法保证恢复。不要复制房主正在游戏的标签页，避免两个页面争用同一房主身份。
 

@@ -1,7 +1,7 @@
 // Owns PeerJS lifetimes only. Room identity, admission and state stay with callers.
 export function createRoomTransport({
   Peer, host, room, options = {}, onStatus = () => {}, onData = () => {}, onOpen = () => {},
-  onConnection = () => {}, retryMs = 500, maxRetryMs = 8000, timeoutMs = 15000,
+  onConnection = () => {}, onIssue = () => {}, retryMs = 500, maxRetryMs = 8000, timeoutMs = 45000,
 }) {
   const roomId = `kitten-kitchen-v1-${room}`;
   const delayLimit = Math.max(0, maxRetryMs);
@@ -43,8 +43,9 @@ export function createRoomTransport({
     opened = connected = signalingDown = false;
     try { previous?.destroy(); } catch { /* Already unusable. */ }
   }
-  function retry(immediate = false) {
+  function retry(immediate = false, issue = 'connection-lost') {
     if (stopped || (retryTimer !== null && !immediate)) return;
+    if (issue) onIssue(issue);
     dispose();
     report('retrying');
     // A callback may stop the transport while handling the status transition.
@@ -67,10 +68,10 @@ export function createRoomTransport({
     const token = ++generation;
     let instance;
     try { instance = host ? new Peer(roomId, options) : new Peer(options); }
-    catch { retry(); return; }
+    catch { retry(false, 'browser'); return; }
     peer = instance;
     const isCurrent = () => current(token, instance);
-    timeoutTimer = setTimeout(() => { if (isCurrent() && !connected) retry(); }, timeoutMs);
+    timeoutTimer = setTimeout(() => { if (isCurrent() && !connected) retry(false, opened ? 'connection-timeout' : 'signaling'); }, timeoutMs);
 
     instance.on('open', () => {
       if (!isCurrent()) return;
@@ -79,10 +80,11 @@ export function createRoomTransport({
       clearTimeout(signalTimer);
       signalTimer = null;
       // PeerJS emits open again after reconnecting its signaling socket.
-      if (opened) return;
+      if (opened) { if (connected) onIssue(null); return; }
       opened = true;
       if (host) {
         connected = true;
+        onIssue(null);
         retryAttempt = 0;
         clearTimeout(timeoutTimer);
         timeoutTimer = null;
@@ -91,14 +93,14 @@ export function createRoomTransport({
       }
       let next;
       try { next = instance.connect(roomId, { reliable: true }); }
-      catch { retry(); return; }
+      catch { retry(false, 'connection-timeout'); return; }
       if (!isCurrent()) { try { next?.close(); } catch {} return; }
       connection = next;
       let dataOpened = false;
       const active = () => isCurrent() && connection === next;
       next.on('data', message => { if (active()) onData(message); });
       next.on('close', () => { if (active()) retry(); });
-      next.on('error', () => { if (active()) retry(); });
+      next.on('error', () => { if (active()) retry(false, 'connection-timeout'); });
       next.on('open', () => {
         if (!active() || dataOpened) return;
         dataOpened = true;
@@ -116,6 +118,7 @@ export function createRoomTransport({
     instance.on('disconnected', () => {
       if (!isCurrent() || signalingDown) return;
       signalingDown = true;
+      onIssue('signaling');
       signalAttempt = 0;
       reconnectSignaling(token, instance);
     });
@@ -125,12 +128,13 @@ export function createRoomTransport({
       if (opened && !instance.destroyed && signalingError) {
         if (!signalingDown) {
           signalingDown = true;
+          onIssue('signaling');
           signalAttempt = 0;
           reconnectSignaling(token, instance);
         }
         return;
       }
-      retry();
+      retry(false, signalingError ? 'signaling' : error?.type || 'connection-timeout');
     });
     instance.on('close', () => { if (isCurrent()) retry(); });
   }
@@ -146,6 +150,7 @@ export function createRoomTransport({
     ready() {
       if (stopped || host || !connection?.open || connected) return;
       connected = true;
+      onIssue(null);
       retryAttempt = 0;
       clearTimeout(timeoutTimer);
       timeoutTimer = null;
@@ -157,7 +162,9 @@ export function createRoomTransport({
       dispose();
     },
     wake() {
-      if (!stopped && !connected) retry(true);
+      if (stopped) return;
+      if (signalingDown && peer) reconnectSignaling(generation, peer);
+      else if (!connected) retry(true, null);
     },
   };
 }
