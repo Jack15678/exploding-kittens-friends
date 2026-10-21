@@ -362,6 +362,8 @@ export function viewFor(g, me) {
     deckCount: g.deck.length, deckTop: g.deck[0]?.faceUp ? structuredClone(g.deck[0]) : null,
     discardTop: g.discard.length ? structuredClone(g.discard.at(-1)) : null, discardCount: g.discard.length,
     turn: g.turn, remaining: g.remaining, attacked: g.attacked, direction: g.direction, winner: g.winner,
-    reaction: f ? { id: f.id, actor: f.actor, title: f.title, cancelled: f.cancelled, passed: [...f.passed], canNope: f.canNope, depth: g.frames.length } : null,
+    reaction: f ? { id: f.id, actor: f.actor, title: f.title, cancelled: f.cancelled, passed: [...f.passed], canNope: f.canNope, depth: g.frames.length,
+      card: f.command.type === 'card' ? structuredClone(f.command.card) : null,
+      remainingMs: g.phase === 'reaction' && f.deadline != null ? Math.max(0, f.deadline - Date.now()) : null } : null,
     prompt, intel: structuredClone(g.intel[me] || null), log: structuredClone(g.log), actionCount: g.actionCount, turnSerial: g.turnSerial };
 }

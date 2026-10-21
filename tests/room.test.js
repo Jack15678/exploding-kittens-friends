@@ -21,6 +21,94 @@ function join(room, name, token = crypto.randomUUID()) {
   conn.emit('data', { type: 'join', token, name, version: 1 });
   return { conn, token, id: room.identities[token] };
 }
+function timedRoom(t) {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 100000 });
+  const room = host(), a = join(room, '桃桃'), b = join(room, '布丁');
+  t.after(() => room.stop());
+  room.send({ type: 'start' });
+  room.game.deck = [{ id: 'safe-top', type: 'skip' }, { id: 'safe-next', type: 'reverse' }];
+  const send = (guest, action) => guest.conn.emit('data', { type: 'action', revision: room.game.revision, reactionId: room.view.reaction?.id, action });
+  return { room, a, b, send };
+}
+
+test('host auto-passes at 10 seconds; partial passes, chat and republishing do not extend the deadline', t => {
+  const { room, a, send } = timedRoom(t);
+  room.send({ type: 'draw' });
+  assert.equal(room.view.reaction.remainingMs, 10000);
+  assert.equal(a.conn.messages.at(-1).view.reaction.remainingMs, 10000);
+  t.mock.timers.tick(3000);
+  send(a, { type: 'pass' }); room.sendChat('还有七秒'); room.publish();
+  assert.equal(room.view.reaction.remainingMs, 7000);
+  t.mock.timers.tick(6999); assert.equal(room.game.phase, 'reaction');
+  t.mock.timers.tick(1);
+  assert.equal(room.game.phase, 'play'); assert.equal(room.game.turn, a.id);
+  assert.equal(room.game.deck.length, 1);
+  const revision = room.game.revision;
+  t.mock.timers.tick(10000); assert.equal(room.game.revision, revision);
+});
+
+test('manual unanimous passes finish early and an old timer cannot settle the next action', t => {
+  const { room, a, b, send } = timedRoom(t);
+  room.send({ type: 'draw' }); t.mock.timers.tick(3000);
+  send(a, { type: 'pass' }); send(b, { type: 'pass' });
+  assert.equal(room.game.phase, 'play');
+  send(a, { type: 'draw' });
+  t.mock.timers.tick(7000); assert.equal(room.game.phase, 'reaction');
+  t.mock.timers.tick(3000); assert.equal(room.game.deck.length, 0);
+  assert.equal(room.game.turn, b.id);
+});
+
+test('Nope restarts the response window and keeps the original public card available', t => {
+  const { room, a, send } = timedRoom(t);
+  room.game.players[0].hand = [{ id: 'attack', type: 'attack' }];
+  room.game.players[1].hand = [{ id: 'nope', type: 'nope' }];
+  room.send({ type: 'play', cardId: 'attack' });
+  const firstId = room.view.reaction.id;
+  t.mock.timers.tick(9000); send(a, { type: 'play', cardId: 'nope' });
+  assert.notEqual(room.view.reaction.id, firstId);
+  assert.equal(room.view.reaction.remainingMs, 10000);
+  assert.equal(room.view.reaction.card.type, 'attack');
+  assert.equal(room.view.discardTop.type, 'nope');
+  t.mock.timers.tick(1000); assert.equal(room.game.phase, 'reaction');
+  t.mock.timers.tick(9000);
+  assert.equal(room.game.phase, 'play'); assert.equal(room.game.turn, room.me);
+  assert.equal(room.game.remaining, 1);
+});
+
+test('NOW pauses the interrupted timer during private choices and resumes with a fresh window', t => {
+  const { room, a, b, send } = timedRoom(t);
+  room.game.players[1].hand = [{ id: 'now', type: 'alterNow' }];
+  room.send({ type: 'draw' }); t.mock.timers.tick(9000);
+  send(a, { type: 'play', cardId: 'now' });
+  assert.equal(room.view.reaction.remainingMs, 10000);
+  room.send({ type: 'pass' }); send(b, { type: 'pass' });
+  assert.equal(room.game.phase, 'prompt'); assert.equal(room.view.reaction.remainingMs, null);
+  const revision = room.game.revision;
+  t.mock.timers.tick(20000); assert.equal(room.game.revision, revision);
+  send(a, { type: 'answer', order: room.game.prompt.cards.map(c => c.id) });
+  assert.equal(room.game.phase, 'reaction'); assert.equal(room.view.reaction.remainingMs, 10000);
+  t.mock.timers.tick(9999); assert.equal(room.game.deck.length, 2);
+  t.mock.timers.tick(1); assert.equal(room.game.deck.length, 1);
+});
+
+test('disconnects pause automatic passes; reconnect and host restore grant a new window; stop clears it', t => {
+  const { room, a } = timedRoom(t);
+  room.send({ type: 'draw' }); t.mock.timers.tick(9000);
+  a.conn.close(); assert.equal(room.view.reaction.remainingMs, null);
+  const revision = room.game.revision;
+  t.mock.timers.tick(20000); assert.equal(room.game.revision, revision);
+  join(room, '忽略昵称', a.token); assert.equal(room.view.reaction.remainingMs, 10000);
+  t.mock.timers.tick(9999); assert.equal(room.game.phase, 'reaction');
+  const local = storage(); saveSession(local, room);
+  const restored = new Room({ saved: readSession(local), name: '主厨', onChange() {}, onNotice() {} });
+  restored.status = 'connected'; restored.publish();
+  assert.equal(restored.view.reaction.remainingMs, null);
+  for (const p of restored.game.players) p.online = true;
+  restored.publish(); assert.equal(restored.view.reaction.remainingMs, 10000);
+  restored.stop(); const restoredRevision = restored.game.revision;
+  t.mock.timers.tick(10000); assert.equal(restored.game.revision, restoredRevision);
+  assert.equal(room.game.phase, 'play');
+});
 test('room binds actions to connections, filters snapshots and restores the same seat', () => {
   const room = host(); const a = join(room, '桃桃'), b = join(room, '布丁');
   assert.equal(room.game.players.length, 3);

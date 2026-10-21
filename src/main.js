@@ -16,8 +16,7 @@ const invitedRoom = new URL(location.href).searchParams.get('room')?.toUpperCase
 let nickname = storageGet('kitten-name') || ['桃桃', '团子', '布丁', '奶盖'][Math.floor(Math.random() * 4)] + Math.floor(Math.random() * 900 + 100);
 let room = null, selected = [], modal = null, joinOpen = !!invitedRoom, homeRecipe = 'exploding-kittens-classic-mode';
 let targetAction = null, futureKey = '', futureOrder = [], insertKey = '', insertPosition = 0;
-let recipeFilter = '全部', toastTimer;
-const compactHand = matchMedia('(max-width: 700px)');
+let recipeFilter = '全部', toastTimer, countdownTimer;
 const colors = p => AVATAR_COLORS[Math.max(0, room?.view?.players.findIndex(x => x.id === p.id) || 0) % AVATAR_COLORS.length];
 const playerName = id => room?.view?.players.find(p => p.id === id)?.name || '朋友';
 const me = () => room?.view?.players.find(p => p.id === room.me);
@@ -41,17 +40,17 @@ function startRoom(role) {
     if (role === 'practice') { room.addBot(); room.addBot(); room.recipe(homeRecipe); }
   } catch (e) { room?.stop(); room = null; notice(e.message); render(); }
 }
-function cardMarkup(c, { selectable = false, small = false, hidden = false, index = null } = {}) {
+function cardMarkup(c, { selectable = false, small = false, hidden = false, index = null, full = false } = {}) {
   if (hidden) return `<div class="playing-card card-back ${small ? 'small' : ''}">${cardBack()}</div>`;
   const def = CARDS[c.type];
-  const inner = `<span class="card-title">${escape(def.name)}</span><span class="card-picture">${catArt(def.color, def.symbol, Object.keys(CARDS).indexOf(c.type))}</span><span class="card-caption">${escape(def.caption || def.text)}</span>`;
+  const inner = `<span class="card-title">${escape(def.name)}</span><span class="card-picture">${catArt(def.color, def.symbol, Object.keys(CARDS).indexOf(c.type))}</span><span class="card-caption">${escape(full ? def.text : def.caption || def.text)}</span>`;
   if (selectable) return `<button id="hand-card-${escape(c.id)}" class="playing-card ${def.color} ${def.cat ? 'combo-card' : ''} ${selected.includes(c.id) ? 'selected' : ''}" data-card="${escape(c.id)}" aria-pressed="${selected.includes(c.id)}" aria-label="${escape(def.name)}：${escape(def.text)}">${inner}</button>`;
   return `<div class="playing-card ${def.color} ${def.cat ? 'combo-card' : ''} ${small ? 'small' : ''}">${index !== null ? `<span class="position-number">第 ${index + 1} 张</span>` : ''}${inner}</div>`;
 }
 function handMarkup(cards = []) {
   if (!cards.length) return '<p class="empty-hand">爪爪空空的，等下一次抽牌。</p>';
   const sortedCards = sortHandForDisplay(cards);
-  const rows = Math.ceil(cards.length / (compactHand.matches ? 8 : 16));
+  const rows = Math.ceil(cards.length / 16);
   const perRow = Math.ceil(cards.length / rows);
   return Array.from({ length: rows }, (_, row) => {
     const group = sortedCards.slice(row * perRow, (row + 1) * perRow);
@@ -122,13 +121,13 @@ function gameScreen() {
   const v = room.view, r = RECIPES.find(r => r.id === v.recipeId), self = me();
   const offline = v.players.filter(p => p.alive && !p.online);
   let status = v.phase === 'finished' ? `${playerName(v.winner)} 赢啦！` : v.phase === 'reaction' ? `${playerName(v.reaction.actor)} 想要${v.reaction.title}` : v.phase === 'prompt' ? '一点小秘密，稍等一下' : v.turn === room.me ? '轮到你啦，慢慢挑' : `${playerName(v.turn)} 的回合`;
-  return `<div class="game-screen">${header()}<section class="game-info"><div><h1>${escape(r.name)}</h1><span>${v.direction === 1 ? '顺时针' : '逆时针'} ↻ · ${v.players.filter(p => p.alive).length} 只猫还在场</span></div><div class="table-tools">${button('牌局记录', 'log', 'quiet')}${button('看过的牌', 'intel', 'quiet', !v.intel)}${button('卡牌图鉴', 'cards', 'quiet')}</div></section>${offline.length || room.status !== 'connected' ? `<div class="connection-banner" role="status">${room.status !== 'connected' ? '正在恢复连接，牌局会原样等你。' : `正在等 ${escape(offline.map(p => p.name).join('、'))} 回来，操作已暂停。`}</div>` : ''}<section class="table-stage"><div class="opponents">${v.players.filter(p => p.id !== room.me).map(p => seat(p, v.players.findIndex(x => x.id === p.id))).join('')}</div><div class="table-felt"><div class="table-stitch"></div><div class="table-label">猫咪厨房 <span>小心烫爪</span></div><div class="deck-area"><div class="deck-column"><button id="draw" data-act="draw" class="draw-pile ${v.deckTop ? 'danger-pile' : ''}" ${v.phase !== 'play' || v.turn !== room.me || !self.alive || blocked() ? 'disabled' : ''} aria-label="抽一张牌，结束回合">${v.deckTop ? cardMarkup(v.deckTop, { small: true }) : cardBack()}<span class="deck-badge">${v.deckCount}</span></button><span>抽牌堆 · ${v.deckCount} 张</span></div><div class="discard-column">${v.discardTop ? cardMarkup(v.discardTop, { small: true }) : `<div class="discard-empty"><span>爪印留这里</span><span>弃牌区</span></div>`}<span>弃牌堆 · ${v.discardCount} 张</span></div></div><div class="table-status"><strong>${escape(status)}</strong>${v.phase === 'play' ? `<span>${v.remaining > 1 || v.attacked ? `还需完成 ${v.remaining} 个回合 · ` : ''}先出牌，最后抽牌。</span>` : ''}${v.phase === 'finished' ? `<span>小厨房没炸，友谊应该也还在。</span>${room.game ? button('再来一锅', 'back-lobby', 'primary') : '<span>等房主安排下一局</span>'}` : ''}</div></div></section><section class="action-panel ${v.phase === 'prompt' ? 'with-prompt' : ''}" aria-live="polite">${v.phase === 'prompt' ? promptPanel(v) : v.phase === 'reaction' ? `<div class="reaction-line"><div><strong>${v.reaction.cancelled ? '这次行动被否决了' : `有人要${escape(v.reaction.title)}`}</strong><span>${v.reaction.canNope ? '可用「才不要」反制，或用「立刻改变未来」。' : '抽牌不能否决，但可以「立刻改变未来」。'} ${v.reaction.passed.length} / ${v.players.filter(p => p.alive).length} 已放行</span></div>${self.alive && !v.reaction.passed.includes(room.me) ? button('放行，继续吧', 'pass', 'primary', blocked()) : '<span class="waiting-label">等朋友响应…</span>'}</div>` : v.phase === 'finished' ? '<div class="action-message"><strong>这一锅，收工。</strong><span>可以翻看牌局记录，再来一道不一样的食谱。</span></div>' : selectedPanel(v)}</section>${v.phase === 'reaction' && selected.length ? `<section class="reaction-selection">${selectedPanel(v)}</section>` : ''}<section class="hand-zone"><div class="hand-heading"><div class="self-avatar ${colors(self)}">${catArt(colors(self), 'paw', 1)}</div><div><strong>${escape(self.name)} <span>你的手牌</span></strong><p>${self.alive ? `${self.count} 张 · ${self.trap ? `下一抽交给 ${escape(playerName(self.trap.owner))}` : '只有你看得到'}` : '已经出局 · 可以继续看朋友们的热闹'}</p></div>${v.phase === 'play' && v.turn === room.me && self.alive ? button('抽牌，结束回合', 'draw', 'primary draw-button', blocked()) : ''}</div><div class="hand" aria-label="你的手牌">${handMarkup(self.hand)}</div></section></div>`;
+  return `<div class="game-screen">${header()}<section class="game-info"><div><h1>${escape(r.name)}</h1><span>${v.direction === 1 ? '顺时针' : '逆时针'} ↻ · ${v.players.filter(p => p.alive).length} 只猫还在场</span></div><div class="table-tools">${button('牌局记录', 'log', 'quiet')}${button('看过的牌', 'intel', 'quiet', !v.intel)}${button('卡牌图鉴', 'cards', 'quiet')}</div></section>${offline.length || room.status !== 'connected' ? `<div class="connection-banner" role="status">${room.status !== 'connected' ? '正在恢复连接，牌局会原样等你。' : `正在等 ${escape(offline.map(p => p.name).join('、'))} 回来，操作已暂停。`}</div>` : ''}<section class="table-stage"><div class="opponents">${v.players.filter(p => p.id !== room.me).map(p => seat(p, v.players.findIndex(x => x.id === p.id))).join('')}</div><div class="table-felt"><div class="table-stitch"></div><div class="table-label">猫咪厨房 <span>小心烫爪</span></div><div class="deck-area"><div class="deck-column"><button id="draw" data-act="draw" class="draw-pile ${v.deckTop ? 'danger-pile' : ''}" ${v.phase !== 'play' || v.turn !== room.me || !self.alive || blocked() ? 'disabled' : ''} aria-label="抽一张牌，结束回合">${v.deckTop ? cardMarkup(v.deckTop, { small: true }) : cardBack()}<span class="deck-badge">${v.deckCount}</span></button><span>抽牌堆 · ${v.deckCount} 张</span></div><div class="discard-column">${v.discardTop ? button(cardMarkup(v.discardTop, { small: true }), 'inspect-card', 'card-inspect', false, `data-type="${v.discardTop.type}" aria-label="查看${escape(cardName(v.discardTop))}完整说明"`) : `<div class="discard-empty"><span>爪印留这里</span><span>弃牌区</span></div>`}<span>弃牌堆 · ${v.discardCount} 张${v.discardTop ? ' · 点牌查看' : ''}</span></div></div><div class="table-status"><strong>${escape(status)}</strong>${v.phase === 'play' ? `<span>${v.remaining > 1 || v.attacked ? `还需完成 ${v.remaining} 个回合 · ` : ''}先出牌，最后抽牌。</span>` : ''}${v.phase === 'finished' ? `<span>小厨房没炸，友谊应该也还在。</span>${room.game ? button('再来一锅', 'back-lobby', 'primary') : '<span>等房主安排下一局</span>'}` : ''}</div></div></section><section class="action-panel ${v.phase === 'prompt' ? 'with-prompt' : ''}" aria-live="polite">${v.phase === 'prompt' ? promptPanel(v) : v.phase === 'reaction' ? `<div class="reaction-line"><div><strong>${v.reaction.cancelled ? '这次行动被否决了' : `有人要${escape(v.reaction.title)}`}</strong><span>${v.reaction.canNope ? '可用「才不要」反制，或用「立刻改变未来」。' : '抽牌不能否决，但可以「立刻改变未来」。'} ${v.reaction.passed.length} / ${v.players.filter(p => p.alive).length} 已放行</span><span id="reaction-countdown" class="reaction-countdown" aria-live="off"></span>${v.reaction.card ? button('查看这张牌', 'inspect-card', 'text-button', false, `data-type="${v.reaction.card.type}"`) : ''}</div>${self.alive && !v.reaction.passed.includes(room.me) ? button('放行，继续吧', 'pass', 'primary', blocked()) : '<span class="waiting-label">等朋友响应…</span>'}</div>` : v.phase === 'finished' ? '<div class="action-message"><strong>这一锅，收工。</strong><span>可以翻看牌局记录，再来一道不一样的食谱。</span></div>' : selectedPanel(v)}</section>${v.phase === 'reaction' && selected.length ? `<section class="reaction-selection">${selectedPanel(v)}</section>` : ''}<section class="hand-zone"><div class="hand-heading"><div class="self-avatar ${colors(self)}">${catArt(colors(self), 'paw', 1)}</div><div><strong>${escape(self.name)} <span>你的手牌</span></strong><p>${self.alive ? `${self.count} 张 · ${self.trap ? `下一抽交给 ${escape(playerName(self.trap.owner))}` : '只有你看得到'}` : '已经出局 · 可以继续看朋友们的热闹'}</p></div>${v.phase === 'play' && v.turn === room.me && self.alive ? button('抽牌，结束回合', 'draw', 'primary draw-button', blocked()) : ''}</div><div class="hand" aria-label="你的手牌">${handMarkup(self.hand)}</div></section></div>`;
 }
 function dialog() {
   if (!modal) return '';
   let title = '', content = '', wide = false;
   if (modal === 'rules') {
-    title = '开锅前，认识一下规则'; content = `<div class="rules-copy"><p><strong>目标只有一个：做最后一只没炸毛的猫。</strong></p><ol><li>选择食谱，按人数发牌；不同食谱的起手牌和拆弹数量不同。</li><li>轮到你时，先出零张或多张牌，最后抽一张。也可以用跳过、攻击等效果避免抽牌。</li><li>抽到爆炸猫：自动消耗拆弹，再由你秘密选择插回位置。没有拆弹就出局。</li><li>两张同名牌可以偷牌；三张同名牌可以点名索牌。万用猫只能代替普通猫牌。</li><li>行动执行前，大家可以放行、使用 Nope 或立刻改变未来。Nope 可以被再次否决。</li></ol><p><strong>容易忘：</strong>普通跳过只减一回合；攻击可以累加；正面内爆猫不能拆弹；僵尸猫只是普通猫牌。</p><p>联机由房主维持牌局。刷新当前标签页可以恢复；房主关闭厨房后其他人无法接管。</p><a href="${SOURCE_RULES}" target="_blank" rel="noreferrer">查阅官方完整规则 ↗</a></div>`;
+    title = '开锅前，认识一下规则'; content = `<div class="rules-copy"><p><strong>目标只有一个：做最后一只没炸毛的猫。</strong></p><ol><li>选择食谱，按人数发牌；不同食谱的起手牌和拆弹数量不同。</li><li>轮到你时，先出零张或多张牌，最后抽一张。也可以用跳过、攻击等效果避免抽牌。</li><li>抽到爆炸猫：自动消耗拆弹，再由你秘密选择插回位置。没有拆弹就出局。</li><li>两张同名牌可以偷牌；三张同名牌可以点名索牌。万用猫只能代替普通猫牌。</li><li>行动执行前有 10 秒响应时间，可以提前放行、使用 Nope 或立刻改变未来；到时自动放行。Nope 可以被再次否决，并重新计时。</li></ol><p><strong>容易忘：</strong>普通跳过只减一回合；攻击可以累加；正面内爆猫不能拆弹；僵尸猫只是普通猫牌。</p><p>联机由房主维持牌局。刷新当前标签页可以恢复；房主关闭厨房后其他人无法接管。</p><a href="${SOURCE_RULES}" target="_blank" rel="noreferrer">查阅官方完整规则 ↗</a></div>`;
   } else if (modal === 'recipes') {
     title = '今晚，想吃哪道灾难？'; wide = true;
     const n = room?.view?.players.length;
@@ -142,6 +141,10 @@ function dialog() {
     content = `<p>${n} 人配方 · 每人 ${spec.start} 张起手牌${spec.defuses ? '，另加 1 张拆弹' : '，没有拆弹'}。</p><table class="ingredients"><thead><tr><th>卡牌</th><th>总张数</th></tr></thead><tbody>${Object.entries(spec.counts).map(([type, n]) => `<tr><td>${cardName(type)}</td><td>${n}</td></tr>`).join('')}</tbody></table><p>数量包含发给玩家的牌。中文食谱名为本项目趣味译名。</p><a href="${r.source}" target="_blank" rel="noreferrer">查看配方来源 ↗</a>`;
   } else if (modal === 'cards') {
     title = '猫咪卡牌图鉴'; wide = true; content = `<div class="card-guide">${Object.entries(CARDS).map(([type, c]) => `<article>${cardMarkup({ type }, { small: true })}<p>${escape(c.english)}<br>卡池 ${c.count} 张</p></article>`).join('')}</div>`;
+  } else if (modal.startsWith('card:')) {
+    const type = modal.slice(5), def = CARDS[type];
+    title = def.name;
+    content = `<div class="card-detail">${cardMarkup({ type }, { full: true })}<p>${escape(def.english)}</p></div>`;
   } else if (modal === 'log') {
     title = '厨房里发生了什么'; content = `<ol class="game-log">${room.view.log.map(l => `<li>${escape(l.text)}</li>`).join('')}</ol>`;
   } else if (modal === 'intel') {
@@ -163,6 +166,9 @@ function render() {
   let content = !room ? home() : !room.view ? connectingScreen() : room.view.phase === 'lobby' ? lobby() : gameScreen();
   if (room?.view && room.connectionIssue) content = content.replace('</header>', `</header><div class="connection-banner" role="status">${escape(room.connectionIssue)} 正在自动重试。 ${button('立即重试', 'retry-connection', 'quiet')}</div>`);
   $('#app').innerHTML = content + dialog();
+  clearInterval(countdownTimer);
+  updateCountdown();
+  if (room?.view?.phase === 'reaction') countdownTimer = setInterval(updateCountdown, 200);
   roomChat.update(room, !!modal);
   document.body.dataset.phase = room?.view?.phase || 'home'; document.body.dataset.connection = room?.status || 'home';
   if ($('.modal')) $('.modal').scrollTop = modalScroll;
@@ -170,6 +176,13 @@ function render() {
     const el = document.getElementById(focusId); el.focus({ preventScroll: true });
     if (typeof selectionStart === 'number' && el.setSelectionRange && !['range', 'number'].includes(el.type)) el.setSelectionRange(selectionStart, selectionStart);
   } else if (modal && !previousModal) $('.modal-close')?.focus({ preventScroll: true });
+}
+function updateCountdown() {
+  const label = $('#reaction-countdown');
+  if (!label) return;
+  const paused = room.status !== 'connected' || room.view.players.some(p => p.alive && !p.online);
+  const seconds = room.reactionEndsAt == null ? null : Math.max(0, Math.ceil((room.reactionEndsAt - performance.now()) / 1000));
+  label.textContent = paused ? '连接恢复后重新计时' : seconds == null ? '等待房主计时…' : seconds ? `${seconds} 秒后自动放行` : '正在结算…';
 }
 function send(action) { selected = []; futureKey = ''; insertKey = ''; modal = null; room?.send(action); render(); }
 function playSelected() {
@@ -194,6 +207,7 @@ $('#app').addEventListener('click', async event => {
   else if (action === 'practice') startRoom('practice');
   else if (action === 'join-toggle') { joinOpen = !joinOpen; render(); $('#room-input')?.focus(); }
   else if (['rules', 'recipes', 'cards', 'log', 'intel'].includes(action)) { modal = action; render(); }
+  else if (action === 'inspect-card' && CARDS[el.dataset.type]) { modal = `card:${el.dataset.type}`; render(); }
   else if (action === 'close-modal') { modal = null; render(); }
   else if (action === 'ask-leave') { modal = 'leave'; render(); }
   else if (action === 'leave') { room?.stop(); changed(null); }
@@ -246,7 +260,6 @@ document.addEventListener('keydown', event => {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
 });
-compactHand.addEventListener('change', () => { if (room?.view) render(); });
 window.addEventListener('pagehide', () => room?.stop(true));
 window.addEventListener('pageshow', e => { if (e.persisted) restore(); });
 function restore() {

@@ -7,6 +7,7 @@ import { saveSession, clearSession, TOKEN_KEY, ROOM_PATTERN } from './session.js
 
 export const CHAT_MAX_LENGTH = 240;
 export const CHAT_HISTORY_LIMIT = 80;
+export const REACTION_TIMEOUT_MS = 10000;
 
 export function commandIsCurrent(g, message) {
   if (message.revision === g.revision) return true;
@@ -85,7 +86,8 @@ export class Room {
   paused() { return this.status !== 'connected' || this.game?.players.some(p => p.alive && !p.online); }
   publish() {
     if (this.stopped || !this.game) return;
-    this.view = viewFor(this.game, this.me); this.persist(); this.changed();
+    this.scheduleReaction();
+    this.view = viewFor(this.game, this.me); this.updateReactionClock(); this.persist(); this.changed();
     for (const [id, conn] of this.connections) {
       if (!conn.open || !this.game.players.some(p => p.id === id)) continue;
       try { conn.send({ type: 'state', me: id, view: viewFor(this.game, id), chat: this.chat }); } catch { conn.close(); }
@@ -96,6 +98,7 @@ export class Room {
     if (this.stopped || !message || typeof message !== 'object') return;
     if (message.type === 'state' && message.view?.version === 1 && message.view.me === message.me) {
       this.me = message.me; this.view = message.view; this.pending = false;
+      this.updateReactionClock();
       if (Array.isArray(message.chat)) this.chat = message.chat.slice(-CHAT_HISTORY_LIMIT);
       this.transport.ready(); this.persist(); this.changed();
     } else if (message.type === 'chat' && Array.isArray(message.messages)) {
@@ -205,6 +208,31 @@ export class Room {
   recipe(id) {
     if (this.game?.phase === 'lobby' && RECIPES.some(r => r.id === id)) { this.game.recipeId = id; this.game.revision++; this.publish(); }
   }
+  updateReactionClock() {
+    const remaining = this.view?.reaction?.remainingMs;
+    // Use local elapsed time so guests with a different system clock see the same countdown.
+    this.reactionEndsAt = remaining == null ? null : performance.now() + remaining;
+  }
+  scheduleReaction() {
+    clearTimeout(this.reactionTimer);
+    const frame = this.game.phase === 'reaction' ? this.game.frames.at(-1) : null;
+    if (!frame || this.paused()) {
+      this.reactionId = null;
+      if (frame) frame.deadline = null;
+      return;
+    }
+    if (this.reactionId !== frame.id) {
+      this.reactionId = frame.id;
+      frame.deadline = Date.now() + REACTION_TIMEOUT_MS;
+    }
+    const id = frame.id;
+    this.reactionTimer = setTimeout(() => {
+      if (this.stopped || this.paused() || this.game.phase !== 'reaction' || this.game.frames.at(-1)?.id !== id) return;
+      const waiting = this.game.players.filter(p => p.alive && !this.game.frames.at(-1).passed.includes(p.id));
+      for (const p of waiting) this.game = act(this.game, p.id, { type: 'pass' });
+      this.publish();
+    }, Math.max(0, frame.deadline - Date.now()));
+  }
   scheduleBot() {
     clearTimeout(this.botTimer);
     if (this.paused() || !this.game || ['lobby', 'finished'].includes(this.game.phase)) return;
@@ -223,7 +251,7 @@ export class Room {
     if (this.stopped) return;
     if (preserve) this.persist();
     if (!preserve && this.role === 'host') for (const conn of this.connections.values()) try { conn.send({ type: 'closed' }); } catch {}
-    this.stopped = true; clearTimeout(this.botTimer);
+    this.stopped = true; clearTimeout(this.botTimer); clearTimeout(this.reactionTimer);
     this.transport?.stop(); this.connections.clear();
     if (!preserve) clearSession(sessionStorage);
   }

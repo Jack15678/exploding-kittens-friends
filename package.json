@@ -12,6 +12,8 @@
     "test:browser": "playwright-cli -s=kitten-check run-code --filename=scripts/browser-smoke.js",
     "test:network": "playwright-cli -s=kitten-check run-code --filename=scripts/network-smoke.js",
     "test:chat": "playwright-cli -s=kitten-check run-code --filename=scripts/chat-smoke.js",
+    "test:mobile-cards": "playwright-cli -s=kitten-check run-code --filename=scripts/mobile-cards-smoke.js",
+    "test:reaction": "playwright-cli -s=kitten-check run-code --filename=scripts/reaction-smoke.js",
     "test:close": "playwright-cli -s=kitten-check close"
   },
   "dependencies": {
