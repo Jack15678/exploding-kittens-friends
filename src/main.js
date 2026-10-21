@@ -1,5 +1,5 @@
 import './style.css';
-import { CARDS, cardName, SOURCE_RULES } from './cards.js';
+import { CARDS, cardName, sortHandForDisplay, SOURCE_RULES } from './cards.js';
 import { RECIPES, getRecipe } from './recipes.js';
 import { cleanName, validCombo } from './game.js';
 import { Room } from './room.js';
@@ -48,10 +48,11 @@ function cardMarkup(c, { selectable = false, small = false, hidden = false, inde
 }
 function handMarkup(cards = []) {
   if (!cards.length) return '<p class="empty-hand">爪爪空空的，等下一次抽牌。</p>';
+  const sortedCards = sortHandForDisplay(cards);
   const rows = Math.ceil(cards.length / (compactHand.matches ? 8 : 16));
   const perRow = Math.ceil(cards.length / rows);
   return Array.from({ length: rows }, (_, row) => {
-    const group = cards.slice(row * perRow, (row + 1) * perRow);
+    const group = sortedCards.slice(row * perRow, (row + 1) * perRow);
     const spread = Math.min(32, (group.length - 1) * 5);
     return `<div class="hand-fan" style="--fan-gaps:${group.length - 1}">${group.map((c, i) => {
       const x = group.length === 1 ? 0 : i / (group.length - 1) - .5;

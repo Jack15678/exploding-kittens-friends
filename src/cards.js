@@ -32,6 +32,18 @@ export const CARDS = {
   beard: card('胡子猫', 'Beard Cat', 4, 'sky', 'bow', '普通猫牌。与同名猫或万用猫组成组合。', { cat: true }),
   feral: card('万用猫', 'Feral Cat', 6, 'peach', 'paw', '组合时充当任意普通猫牌，不能代替攻击、拆弹等功能牌。', { cat: true }),
 };
+const HAND_ORDER = [
+  'defuse', 'streaking', 'nope', // 保命与反制
+  'attack', 'targeted', 'personal', 'skip', 'superSkip', 'reverse', // 攻击与回合
+  'see3', 'see5', 'alter', 'alterNow', 'share', // 未来
+  'shuffle', 'swap', 'bottom', 'bury', 'garbage', 'catomic', // 牌堆
+  'barking', 'take', 'mark', // 玩家互动
+  'taco', 'rainbow', 'zombie', 'beard', 'feral', // 组合猫牌
+  'exploding', 'imploding', // 危险猫
+];
+const handRank = new Map(HAND_ORDER.map((type, index) => [type, index]));
+// Sort a display copy: stealing and marked cards still use the original hand indices.
+export const sortHandForDisplay = cards => [...cards].sort((a, b) => handRank.get(a.type) - handRank.get(b.type));
 export const cardName = c => CARDS[typeof c === 'string' ? c : c.type]?.name || '未知牌';
 export const TOTAL_CARDS = Object.values(CARDS).reduce((n, c) => n + c.count, 0);
 export const SOURCE_RULES = 'https://www.explodingkittens.com/pages/rules-recipes-for-disaster';
