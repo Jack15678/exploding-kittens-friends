@@ -15,6 +15,7 @@ let nickname = storageGet('kitten-name') || ['桃桃', '团子', '布丁', '奶�
 let room = null, selected = [], modal = null, joinOpen = !!invitedRoom, homeRecipe = 'exploding-kittens-classic-mode';
 let targetAction = null, futureKey = '', futureOrder = [], insertKey = '', insertPosition = 0;
 let recipeFilter = '全部', toastTimer;
+const compactHand = matchMedia('(max-width: 700px)');
 const colors = p => AVATAR_COLORS[Math.max(0, room?.view?.players.findIndex(x => x.id === p.id) || 0) % AVATAR_COLORS.length];
 const playerName = id => room?.view?.players.find(p => p.id === id)?.name || '朋友';
 const me = () => room?.view?.players.find(p => p.id === room.me);
@@ -42,8 +43,21 @@ function cardMarkup(c, { selectable = false, small = false, hidden = false, inde
   if (hidden) return `<div class="playing-card card-back ${small ? 'small' : ''}">${cardBack()}</div>`;
   const def = CARDS[c.type];
   const inner = `<span class="card-title">${escape(def.name)}</span><span class="card-picture">${catArt(def.color, def.symbol, Object.keys(CARDS).indexOf(c.type))}</span><span class="card-caption">${escape(def.text)}</span>`;
-  if (selectable) return `<button class="playing-card ${def.color} ${selected.includes(c.id) ? 'selected' : ''}" data-card="${escape(c.id)}" aria-pressed="${selected.includes(c.id)}" aria-label="${escape(def.name)}：${escape(def.text)}">${inner}</button>`;
+  if (selectable) return `<button id="hand-card-${escape(c.id)}" class="playing-card ${def.color} ${selected.includes(c.id) ? 'selected' : ''}" data-card="${escape(c.id)}" aria-pressed="${selected.includes(c.id)}" aria-label="${escape(def.name)}：${escape(def.text)}">${inner}</button>`;
   return `<div class="playing-card ${def.color} ${small ? 'small' : ''}">${index !== null ? `<span class="position-number">第 ${index + 1} 张</span>` : ''}${inner}</div>`;
+}
+function handMarkup(cards = []) {
+  if (!cards.length) return '<p class="empty-hand">爪爪空空的，等下一次抽牌。</p>';
+  const rows = Math.ceil(cards.length / (compactHand.matches ? 8 : 16));
+  const perRow = Math.ceil(cards.length / rows);
+  return Array.from({ length: rows }, (_, row) => {
+    const group = cards.slice(row * perRow, (row + 1) * perRow);
+    const spread = Math.min(32, (group.length - 1) * 5);
+    return `<div class="hand-fan" style="--fan-gaps:${group.length - 1}">${group.map((c, i) => {
+      const x = group.length === 1 ? 0 : i / (group.length - 1) - .5;
+      return `<div class="hand-slot ${selected.includes(c.id) ? 'is-selected' : ''}" style="--fan-x:${x};--fan-angle:${x * spread}deg;--fan-y:${x * x * Math.min(112, (group.length - 1) * 20)}px;--fan-order:${i}">${cardMarkup(c, { selectable: true })}</div>`;
+    }).join('')}</div>`;
+  }).join('');
 }
 function header() {
   const online = room?.status === 'connected';
@@ -101,7 +115,7 @@ function gameScreen() {
   const v = room.view, r = RECIPES.find(r => r.id === v.recipeId), self = me();
   const offline = v.players.filter(p => p.alive && !p.online);
   let status = v.phase === 'finished' ? `${playerName(v.winner)} 赢啦！` : v.phase === 'reaction' ? `${playerName(v.reaction.actor)} 想要${v.reaction.title}` : v.phase === 'prompt' ? '一点小秘密，稍等一下' : v.turn === room.me ? '轮到你啦，慢慢挑' : `${playerName(v.turn)} 的回合`;
-  return `<div class="game-screen">${header()}<section class="game-info"><div><h1>${escape(r.name)}</h1><span>${v.direction === 1 ? '顺时针' : '逆时针'} ↻ · ${v.players.filter(p => p.alive).length} 只猫还在场</span></div><div class="table-tools">${button('牌局记录', 'log', 'quiet')}${button('看过的牌', 'intel', 'quiet', !v.intel)}${button('卡牌图鉴', 'cards', 'quiet')}</div></section>${offline.length || room.status !== 'connected' ? `<div class="connection-banner" role="status">${room.status !== 'connected' ? '正在恢复连接，牌局会原样等你。' : `正在等 ${escape(offline.map(p => p.name).join('、'))} 回来，操作已暂停。`}</div>` : ''}<section class="table-stage"><div class="opponents">${v.players.filter(p => p.id !== room.me).map(p => seat(p, v.players.findIndex(x => x.id === p.id))).join('')}</div><div class="table-felt"><div class="table-stitch"></div><div class="table-label">猫咪厨房 <span>小心烫爪</span></div><div class="deck-area"><div class="deck-column"><button id="draw" data-act="draw" class="draw-pile ${v.deckTop ? 'danger-pile' : ''}" ${v.phase !== 'play' || v.turn !== room.me || !self.alive || blocked() ? 'disabled' : ''} aria-label="抽一张牌，结束回合">${v.deckTop ? cardMarkup(v.deckTop, { small: true }) : cardBack()}<span class="deck-badge">${v.deckCount}</span></button><span>抽牌堆 · ${v.deckCount} 张</span></div><div class="discard-column">${v.discardTop ? cardMarkup(v.discardTop, { small: true }) : `<div class="discard-empty"><span>爪印留这里</span><span>弃牌区</span></div>`}<span>弃牌堆 · ${v.discardCount} 张</span></div></div><div class="table-status"><strong>${escape(status)}</strong>${v.phase === 'play' ? `<span>${v.remaining > 1 || v.attacked ? `还需完成 ${v.remaining} 个回合 · ` : ''}先出牌，最后抽牌。</span>` : ''}${v.phase === 'finished' ? `<span>小厨房没炸，友谊应该也还在。</span>${room.game ? button('再来一锅', 'back-lobby', 'primary') : '<span>等房主安排下一局</span>'}` : ''}</div></div></section><section class="action-panel ${v.phase === 'prompt' ? 'with-prompt' : ''}" aria-live="polite">${v.phase === 'prompt' ? promptPanel(v) : v.phase === 'reaction' ? `<div class="reaction-line"><div><strong>${v.reaction.cancelled ? '这次行动被否决了' : `有人要${escape(v.reaction.title)}`}</strong><span>${v.reaction.canNope ? '可用「才不要」反制，或用「立刻改变未来」。' : '抽牌不能否决，但可以「立刻改变未来」。'} ${v.reaction.passed.length} / ${v.players.filter(p => p.alive).length} 已放行</span></div>${self.alive && !v.reaction.passed.includes(room.me) ? button('放行，继续吧', 'pass', 'primary', blocked()) : '<span class="waiting-label">等朋友响应…</span>'}</div>` : v.phase === 'finished' ? '<div class="action-message"><strong>这一锅，收工。</strong><span>可以翻看牌局记录，再来一道不一样的食谱。</span></div>' : selectedPanel(v)}</section>${v.phase === 'reaction' && selected.length ? `<section class="reaction-selection">${selectedPanel(v)}</section>` : ''}<section class="hand-zone"><div class="hand-heading"><div class="self-avatar ${colors(self)}">${catArt(colors(self), 'paw', 1)}</div><div><strong>${escape(self.name)} <span>你的手牌</span></strong><p>${self.alive ? `${self.count} 张 · ${self.trap ? `下一抽交给 ${escape(playerName(self.trap.owner))}` : '只有你看得到'}` : '已经出局 · 可以继续看朋友们的热闹'}</p></div>${v.phase === 'play' && v.turn === room.me && self.alive ? button('抽牌，结束回合', 'draw', 'primary draw-button', blocked()) : ''}</div><div class="hand" aria-label="你的手牌">${self.hand?.map(c => cardMarkup(c, { selectable: true })).join('') || '<p class="empty-hand">爪爪空空的，等下一次抽牌。</p>'}</div></section></div>`;
+  return `<div class="game-screen">${header()}<section class="game-info"><div><h1>${escape(r.name)}</h1><span>${v.direction === 1 ? '顺时针' : '逆时针'} ↻ · ${v.players.filter(p => p.alive).length} 只猫还在场</span></div><div class="table-tools">${button('牌局记录', 'log', 'quiet')}${button('看过的牌', 'intel', 'quiet', !v.intel)}${button('卡牌图鉴', 'cards', 'quiet')}</div></section>${offline.length || room.status !== 'connected' ? `<div class="connection-banner" role="status">${room.status !== 'connected' ? '正在恢复连接，牌局会原样等你。' : `正在等 ${escape(offline.map(p => p.name).join('、'))} 回来，操作已暂停。`}</div>` : ''}<section class="table-stage"><div class="opponents">${v.players.filter(p => p.id !== room.me).map(p => seat(p, v.players.findIndex(x => x.id === p.id))).join('')}</div><div class="table-felt"><div class="table-stitch"></div><div class="table-label">猫咪厨房 <span>小心烫爪</span></div><div class="deck-area"><div class="deck-column"><button id="draw" data-act="draw" class="draw-pile ${v.deckTop ? 'danger-pile' : ''}" ${v.phase !== 'play' || v.turn !== room.me || !self.alive || blocked() ? 'disabled' : ''} aria-label="抽一张牌，结束回合">${v.deckTop ? cardMarkup(v.deckTop, { small: true }) : cardBack()}<span class="deck-badge">${v.deckCount}</span></button><span>抽牌堆 · ${v.deckCount} 张</span></div><div class="discard-column">${v.discardTop ? cardMarkup(v.discardTop, { small: true }) : `<div class="discard-empty"><span>爪印留这里</span><span>弃牌区</span></div>`}<span>弃牌堆 · ${v.discardCount} 张</span></div></div><div class="table-status"><strong>${escape(status)}</strong>${v.phase === 'play' ? `<span>${v.remaining > 1 || v.attacked ? `还需完成 ${v.remaining} 个回合 · ` : ''}先出牌，最后抽牌。</span>` : ''}${v.phase === 'finished' ? `<span>小厨房没炸，友谊应该也还在。</span>${room.game ? button('再来一锅', 'back-lobby', 'primary') : '<span>等房主安排下一局</span>'}` : ''}</div></div></section><section class="action-panel ${v.phase === 'prompt' ? 'with-prompt' : ''}" aria-live="polite">${v.phase === 'prompt' ? promptPanel(v) : v.phase === 'reaction' ? `<div class="reaction-line"><div><strong>${v.reaction.cancelled ? '这次行动被否决了' : `有人要${escape(v.reaction.title)}`}</strong><span>${v.reaction.canNope ? '可用「才不要」反制，或用「立刻改变未来」。' : '抽牌不能否决，但可以「立刻改变未来」。'} ${v.reaction.passed.length} / ${v.players.filter(p => p.alive).length} 已放行</span></div>${self.alive && !v.reaction.passed.includes(room.me) ? button('放行，继续吧', 'pass', 'primary', blocked()) : '<span class="waiting-label">等朋友响应…</span>'}</div>` : v.phase === 'finished' ? '<div class="action-message"><strong>这一锅，收工。</strong><span>可以翻看牌局记录，再来一道不一样的食谱。</span></div>' : selectedPanel(v)}</section>${v.phase === 'reaction' && selected.length ? `<section class="reaction-selection">${selectedPanel(v)}</section>` : ''}<section class="hand-zone"><div class="hand-heading"><div class="self-avatar ${colors(self)}">${catArt(colors(self), 'paw', 1)}</div><div><strong>${escape(self.name)} <span>你的手牌</span></strong><p>${self.alive ? `${self.count} 张 · ${self.trap ? `下一抽交给 ${escape(playerName(self.trap.owner))}` : '只有你看得到'}` : '已经出局 · 可以继续看朋友们的热闹'}</p></div>${v.phase === 'play' && v.turn === room.me && self.alive ? button('抽牌，结束回合', 'draw', 'primary draw-button', blocked()) : ''}</div><div class="hand" aria-label="你的手牌">${handMarkup(self.hand)}</div></section></div>`;
 }
 function dialog() {
   if (!modal) return '';
@@ -136,13 +150,12 @@ function dialog() {
 }
 function render() {
   const focused = document.activeElement, focusId = focused?.id, selectionStart = focused?.selectionStart;
-  const handScroll = $('.hand')?.scrollLeft || 0, modalScroll = $('.modal')?.scrollTop || 0;
+  const modalScroll = $('.modal')?.scrollTop || 0;
   const previousModal = !!$('.modal');
   if (room?.view) selected = selected.filter(id => me()?.hand?.some(c => c.id === id));
   const content = !room ? home() : !room.view ? `<div class="room-screen">${header()}<div class="connecting-screen">${catArt('sky', 'paw', 1)}<h1>正在找朋友的厨房…</h1><p>房间 ${escape(room.room)} · 首次连接可能需要几秒。</p>${button('取消连接', 'leave', 'secondary')}</div></div>` : room.view.phase === 'lobby' ? lobby() : gameScreen();
   $('#app').innerHTML = content + dialog();
   document.body.dataset.phase = room?.view?.phase || 'home'; document.body.dataset.connection = room?.status || 'home';
-  if ($('.hand')) $('.hand').scrollLeft = handScroll;
   if ($('.modal')) $('.modal').scrollTop = modalScroll;
   if (focusId && document.getElementById(focusId)) {
     const el = document.getElementById(focusId); el.focus({ preventScroll: true });
@@ -158,7 +171,7 @@ function playSelected() {
   if (needsTarget) { modal = 'target'; render(); } else send(targetAction);
 }
 $('#app').addEventListener('click', async event => {
-  const card = event.target.closest('[data-card]');
+  const card = event.target.closest('[data-card]') || event.target.closest('.hand-slot')?.querySelector('[data-card]');
   if (card) {
     const id = card.dataset.card, hand = me().hand;
     if (selected.includes(id)) selected = selected.filter(x => x !== id);
@@ -210,6 +223,11 @@ $('#app').addEventListener('submit', event => {
   if (event.target.id === 'name-card-form') send({ type: 'answer', cardType: $('#requested-card').value });
 });
 document.addEventListener('keydown', event => {
+  if (!modal && event.target.matches('[data-card]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    const cards = [...document.querySelectorAll('.hand [data-card]')], i = cards.indexOf(event.target);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? cards.length - 1 : Math.max(0, Math.min(cards.length - 1, i + (event.key === 'ArrowRight' ? 1 : -1)));
+    event.preventDefault(); cards[next]?.focus();
+  }
   if (event.key === 'Escape' && modal) { modal = null; render(); }
   if (event.key === 'Tab' && modal) {
     const focusable = [...$('.modal').querySelectorAll('button:not([disabled]), a, input, select')];
@@ -218,6 +236,7 @@ document.addEventListener('keydown', event => {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
 });
+compactHand.addEventListener('change', () => { if (room?.view) render(); });
 window.addEventListener('pagehide', () => room?.stop(true));
 window.addEventListener('pageshow', e => { if (e.persisted) restore(); });
 function restore() {
