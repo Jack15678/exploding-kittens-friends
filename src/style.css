@@ -121,12 +121,12 @@ nav { display: flex; gap: 8px; align-items: center; }
 .hand-slot { position: absolute; left: calc(50% + var(--fan-x) * (100% - var(--fan-card-width) - 2 * var(--fan-edge))); top: calc(38px + var(--fan-y)); width: var(--fan-card-width); height: var(--fan-card-height); transform: translateX(-50%) rotate(var(--fan-angle)); z-index: var(--fan-order); cursor: pointer; }
 .hand-slot > .playing-card { width: 100%; height: 100%; box-shadow: 0 5px 12px #51445018; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .hand-slot.is-selected { z-index: 100; }
-.hand-slot.is-selected > .playing-card { transform: rotate(calc(-1 * var(--fan-angle))) translateY(-22px); box-shadow: 0 10px 24px #9c38552b; }
+.hand-slot.is-selected > .playing-card { transform: translateY(-22px); box-shadow: 0 10px 24px #9c38552b; }
 .hand-slot:has(:focus-visible) { z-index: 300; }
-.hand-slot > .playing-card:focus-visible { transform: rotate(calc(-1 * var(--fan-angle))) translateY(-38px) scale(1.08); box-shadow: 0 14px 28px #5144502b; }
+.hand-slot > .playing-card:focus-visible { transform: translateY(-38px) scale(1.08); box-shadow: 0 14px 28px #5144502b; }
 @media (hover: hover) and (pointer: fine) {
   .hand-slot:hover { z-index: 200; }
-  .hand-slot:hover > .playing-card { transform: rotate(calc(-1 * var(--fan-angle))) translateY(-38px) scale(1.08); box-shadow: 0 14px 28px #5144502b; }
+  .hand-slot:hover > .playing-card { transform: translateY(-38px) scale(1.08); box-shadow: 0 14px 28px #5144502b; }
 }
 .playing-card { --card-color: #faecd9; --card-accent: #e5bf91; background: #fffaf5; border: 3px solid var(--card-accent); border-radius: 13px; width: 132px; height: 184px; padding: 9px 7px 8px; display: flex; flex-direction: column; align-items: stretch; text-align: center; flex-shrink: 0; position: relative; color: var(--ink); overflow: hidden; font-weight: 400; }
 .playing-card.rose { --card-color: #f8dce1; --card-accent: #e9a4b1; }.playing-card.mint { --card-color: #e0efe5; --card-accent: #9dceb9; }.playing-card.sky { --card-color: #e0eef4; --card-accent: #a7c9d9; }.playing-card.plum { --card-color: #ece3f3; --card-accent: #c3afd6; }.playing-card.peach { --card-color: #faecd9; --card-accent: #e5bf91; }
