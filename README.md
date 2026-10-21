@@ -2,6 +2,8 @@
 
 《爆炸猫：灾难食谱》的非官方浏览器实现，供自己和朋友同乐。奶油粉与薄荷绿的可爱界面、原创 SVG 猫咪牌面、中文玩法、18 道食谱。无需账号。
 
+**在线游玩：[爆炸猫 · 好友厨房](https://jack15678.github.io/exploding-kittens-friends/)**
+
 ## 本地开始
 
 需要 Node.js 22 或以上。
@@ -31,7 +33,7 @@ npm run dev
 
 联机架构参考同级 `wizard-friends`：Vite 静态网页 + PeerJS 信令 + WebRTC 数据通道。**GitHub Pages 托管网页，牌局不通过 GitHub API 同步。** 房主是规则和状态的权威，适合彼此信任的好友。
 
-`.github/workflows/pages.yml` 已准备好：推送 `main` 时执行规则测试、构建并部署。未来发布时，在 GitHub 仓库的 Settings → Pages 中选择 **GitHub Actions**。Vite 使用相对资源路径，兼容项目子目录。本项目目前仅初始化本地 Git，未创建远程仓库或发布。
+代码仓库：[Jack15678/exploding-kittens-friends](https://github.com/Jack15678/exploding-kittens-friends)。`.github/workflows/pages.yml` 在推送 `main` 时执行规则测试、构建并部署；GitHub 仓库 Settings → Pages → Source 使用 **GitHub Actions**。Vite 使用相对资源路径，兼容项目子目录。
 
 默认使用 PeerJS 的公共信令服务和默认 ICE 配置。部分校园网、公司网或移动网络可能需要 TURN。可参考 `.env.example` 配置自己的服务后重新构建；前端的 `VITE_*` 值会进入构建产物，不能在其中放长期管理密钥。
 
