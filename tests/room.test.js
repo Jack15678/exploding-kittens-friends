@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { Room, commandIsCurrent } from '../src/room.js';
+import { Room, commandIsCurrent, CHAT_HISTORY_LIMIT, CHAT_MAX_LENGTH } from '../src/room.js';
 import { addPlayer, act, viewFor } from '../src/game.js';
 import { readSession, saveSession, SESSION_KEY, TOKEN_KEY } from '../src/session.js';
 
@@ -89,4 +89,42 @@ test('host allows a slow incoming handshake and clears a recovered connection hi
   room.networkIssue('connection-timeout'); assert.match(room.connectionIssue, /两端网络/);
   room.networkIssue(null); assert.equal(room.connectionIssue, '');
   t.mock.timers.tick(60000); assert.equal(conn.open, true);
+});
+
+test('chat binds authors to admitted connections and does not change the game revision', () => {
+  const room = host(), a = join(room, '桃桃'), b = join(room, '布丁');
+  const before = structuredClone(room.game);
+  a.conn.emit('data', { type: 'chat', text: '  等我一下 🐱  ', from: room.me, name: '伪造房主' });
+  assert.deepEqual(room.game, before);
+  assert.equal(room.chat[0].from, a.id); assert.equal(room.chat[0].name, '桃桃');
+  assert.equal(room.chat[0].text, '等我一下 🐱');
+  assert.deepEqual(b.conn.messages.at(-1), { type: 'chat', messages: room.chat });
+  assert.ok(!('game' in b.conn.messages.at(-1)) && !('view' in b.conn.messages.at(-1)));
+  for (const text of ['', '   ', '猫'.repeat(CHAT_MAX_LENGTH + 1), { text: '坏消息' }]) {
+    a.conn.emit('data', { type: 'chat', text }); assert.equal(room.chat.length, 1);
+  }
+  const stranger = new Connection(); room.accept(stranger, () => true);
+  stranger.emit('data', { type: 'chat', text: '还没入房' });
+  assert.equal(room.chat.length, 1); assert.equal(stranger.messages.at(-1).rejected, true);
+  stranger.close(); a.conn.close(); b.conn.close(); room.stop();
+});
+
+test('chat remains usable during a paused game and restores a bounded history', () => {
+  const room = host(), a = join(room, '桃桃'), b = join(room, '布丁');
+  b.conn.close(); assert.equal(room.paused(), true);
+  for (let i = 0; i < CHAT_HISTORY_LIMIT + 3; i++) assert.equal(room.sendChat(`第 ${i} 条`), true);
+  assert.equal(room.chat.length, CHAT_HISTORY_LIMIT); assert.equal(room.chat[0].text, '第 3 条');
+  const local = storage(); saveSession(local, room);
+  const restored = new Room({ saved: readSession(local), name: '主厨', onChange() {}, onNotice() {} });
+  assert.deepEqual(restored.chat, room.chat);
+  const rejoined = join(room, '忽略的新昵称', a.token);
+  const state = rejoined.conn.messages.at(-1);
+  assert.deepEqual(state.chat, room.chat);
+  const guest = new Room({ role: 'guest', name: '桃桃', code: room.room, onChange() {}, onNotice() {} });
+  guest.transport = { ready() {}, stop() {} }; guest.receive(state);
+  assert.deepEqual(guest.chat, room.chat);
+  saveSession(local, guest); assert.deepEqual(readSession(local).chat, room.chat);
+  assert.ok(!('game' in readSession(local)) && !('deck' in readSession(local).view));
+  room.networkStatus('retrying'); assert.equal(room.sendChat('离线消息'), false);
+  rejoined.conn.close(); guest.stop(); restored.stop(); room.stop();
 });

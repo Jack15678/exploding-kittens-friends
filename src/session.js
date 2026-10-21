@@ -5,6 +5,7 @@ export const ROOM_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
 export function saveSession(storage, session) {
   try {
     const record = { version: 1, role: session.role, room: session.room, me: session.me };
+    record.chat = session.chat || [];
     if (session.role === 'guest') {
       record.view = session.game ? viewFor(session.game, session.me) : session.view;
       if (record.view) {

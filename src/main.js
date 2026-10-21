@@ -3,10 +3,12 @@ import { CARDS, cardName, sortHandForDisplay, SOURCE_RULES } from './cards.js';
 import { RECIPES, getRecipe } from './recipes.js';
 import { cleanName, validCombo } from './game.js';
 import { Room } from './room.js';
+import { RoomChat } from './chat.js';
 import { readSession } from './session.js';
 import { catArt, cardBack, AVATAR_COLORS } from './art.js';
 
 const $ = s => document.querySelector(s);
+const roomChat = new RoomChat($('#room-chat'));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const button = (text, action, cls = '', disabled = false, extra = '') => `<button type="button" class="${cls}" data-act="${action}" ${disabled ? 'disabled' : ''} ${extra}>${text}</button>`;
 const storageGet = key => { try { return sessionStorage.getItem(key); } catch { return null; } };
@@ -161,9 +163,10 @@ function render() {
   let content = !room ? home() : !room.view ? connectingScreen() : room.view.phase === 'lobby' ? lobby() : gameScreen();
   if (room?.view && room.connectionIssue) content = content.replace('</header>', `</header><div class="connection-banner" role="status">${escape(room.connectionIssue)} 正在自动重试。 ${button('立即重试', 'retry-connection', 'quiet')}</div>`);
   $('#app').innerHTML = content + dialog();
+  roomChat.update(room, !!modal);
   document.body.dataset.phase = room?.view?.phase || 'home'; document.body.dataset.connection = room?.status || 'home';
   if ($('.modal')) $('.modal').scrollTop = modalScroll;
-  if (focusId && document.getElementById(focusId)) {
+  if (focusId && !focused.isConnected && document.getElementById(focusId)) {
     const el = document.getElementById(focusId); el.focus({ preventScroll: true });
     if (typeof selectionStart === 'number' && el.setSelectionRange && !['range', 'number'].includes(el.type)) el.setSelectionRange(selectionStart, selectionStart);
   } else if (modal && !previousModal) $('.modal-close')?.focus({ preventScroll: true });

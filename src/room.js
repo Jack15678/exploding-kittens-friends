@@ -5,6 +5,9 @@ import { RECIPES } from './recipes.js';
 import { createRoomTransport } from './room-transport.js';
 import { saveSession, clearSession, TOKEN_KEY, ROOM_PATTERN } from './session.js';
 
+export const CHAT_MAX_LENGTH = 240;
+export const CHAT_HISTORY_LIMIT = 80;
+
 export function commandIsCurrent(g, message) {
   if (message.revision === g.revision) return true;
   if (message.action?.type === 'pass') return g.phase === 'reaction' && message.reactionId === g.frames.at(-1)?.id;
@@ -36,6 +39,7 @@ export class Room {
     this.view = saved?.view || (this.game ? viewFor(this.game, this.me) : null);
     this.status = this.role === 'practice' ? 'connected' : 'connecting';
     this.connectionIssue = '';
+    this.chat = saved?.chat?.slice(-CHAT_HISTORY_LIMIT) || [];
     this.connections = new Map(); this.transport = null; this.stopped = false; this.pending = false;
     try {
       this.token = sessionStorage.getItem(TOKEN_KEY) || crypto.randomUUID(); sessionStorage.setItem(TOKEN_KEY, this.token);
@@ -84,7 +88,7 @@ export class Room {
     this.view = viewFor(this.game, this.me); this.persist(); this.changed();
     for (const [id, conn] of this.connections) {
       if (!conn.open || !this.game.players.some(p => p.id === id)) continue;
-      try { conn.send({ type: 'state', me: id, view: viewFor(this.game, id) }); } catch { conn.close(); }
+      try { conn.send({ type: 'state', me: id, view: viewFor(this.game, id), chat: this.chat }); } catch { conn.close(); }
     }
     this.scheduleBot();
   }
@@ -92,7 +96,10 @@ export class Room {
     if (this.stopped || !message || typeof message !== 'object') return;
     if (message.type === 'state' && message.view?.version === 1 && message.view.me === message.me) {
       this.me = message.me; this.view = message.view; this.pending = false;
+      if (Array.isArray(message.chat)) this.chat = message.chat.slice(-CHAT_HISTORY_LIMIT);
       this.transport.ready(); this.persist(); this.changed();
+    } else if (message.type === 'chat' && Array.isArray(message.messages)) {
+      this.chat = message.messages.slice(-CHAT_HISTORY_LIMIT); this.persist(); this.changed();
     } else if (message.type === 'error') {
       this.pending = false;
       if (message.rejected) { this.stop(); this.onChange(null); } else this.changed();
@@ -124,6 +131,8 @@ export class Room {
           const old = this.connections.get(id); this.connections.set(id, conn);
           if (old && old !== conn) old.close();
           p.online = true; this.game.revision++; this.publish();
+        } else if (message.type === 'chat' && id && this.connections.get(id) === conn) {
+          this.appendChat(id, message.text);
         } else if (message.type === 'action' && id && this.connections.get(id) === conn) {
           if (this.paused()) throw new Error('正在等离线朋友回来。');
           if (!commandIsCurrent(this.game, message)) throw new Error('牌桌刚刚有变化，请重新选择。');
@@ -142,6 +151,27 @@ export class Room {
       if (p) { p.online = false; this.game.revision++; this.publish(); }
     });
     conn.on('error', () => conn.close());
+  }
+  appendChat(sender, value) {
+    const author = this.game?.players.find(p => p.id === sender);
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!author || !text || text.length > CHAT_MAX_LENGTH) throw new Error(`消息请写 1–${CHAT_MAX_LENGTH} 个字。`);
+    this.chat = [...this.chat, { id: crypto.randomUUID(), from: author.id, name: author.name, text, createdAt: Date.now() }].slice(-CHAT_HISTORY_LIMIT);
+    this.persist(); this.changed();
+    for (const [id, conn] of this.connections) {
+      if (!conn.open || !this.game.players.some(p => p.id === id)) continue;
+      try { conn.send({ type: 'chat', messages: this.chat }); } catch { conn.close(); }
+    }
+  }
+  sendChat(text) {
+    if (this.stopped || !this.view || this.role === 'practice') return false;
+    try {
+      if (this.status !== 'connected') throw new Error('连接恢复后就能继续聊天。');
+      if (typeof text !== 'string' || !text.trim() || text.trim().length > CHAT_MAX_LENGTH) throw new Error(`消息请写 1–${CHAT_MAX_LENGTH} 个字。`);
+      if (this.role === 'host') this.appendChat(this.me, text);
+      else if (!this.transport.send({ type: 'chat', text: text.trim() })) throw new Error('消息没发出去，请连接恢复后重试。');
+      return true;
+    } catch (error) { this.onNotice(error.message); return false; }
   }
   send(action) {
     if (this.pending || this.stopped || !this.view) return false;
