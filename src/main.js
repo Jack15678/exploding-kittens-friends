@@ -44,9 +44,9 @@ function startRoom(role) {
 function cardMarkup(c, { selectable = false, small = false, hidden = false, index = null } = {}) {
   if (hidden) return `<div class="playing-card card-back ${small ? 'small' : ''}">${cardBack()}</div>`;
   const def = CARDS[c.type];
-  const inner = `<span class="card-title">${escape(def.name)}</span><span class="card-picture">${catArt(def.color, def.symbol, Object.keys(CARDS).indexOf(c.type))}</span><span class="card-caption">${escape(def.text)}</span>`;
-  if (selectable) return `<button id="hand-card-${escape(c.id)}" class="playing-card ${def.color} ${selected.includes(c.id) ? 'selected' : ''}" data-card="${escape(c.id)}" aria-pressed="${selected.includes(c.id)}" aria-label="${escape(def.name)}：${escape(def.text)}">${inner}</button>`;
-  return `<div class="playing-card ${def.color} ${small ? 'small' : ''}">${index !== null ? `<span class="position-number">第 ${index + 1} 张</span>` : ''}${inner}</div>`;
+  const inner = `<span class="card-title">${escape(def.name)}</span><span class="card-picture">${catArt(def.color, def.symbol, Object.keys(CARDS).indexOf(c.type))}</span><span class="card-caption">${escape(def.caption || def.text)}</span>`;
+  if (selectable) return `<button id="hand-card-${escape(c.id)}" class="playing-card ${def.color} ${def.cat ? 'combo-card' : ''} ${selected.includes(c.id) ? 'selected' : ''}" data-card="${escape(c.id)}" aria-pressed="${selected.includes(c.id)}" aria-label="${escape(def.name)}：${escape(def.text)}">${inner}</button>`;
+  return `<div class="playing-card ${def.color} ${def.cat ? 'combo-card' : ''} ${small ? 'small' : ''}">${index !== null ? `<span class="position-number">第 ${index + 1} 张</span>` : ''}${inner}</div>`;
 }
 function handMarkup(cards = []) {
   if (!cards.length) return '<p class="empty-hand">爪爪空空的，等下一次抽牌。</p>';

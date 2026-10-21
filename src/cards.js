@@ -1,5 +1,6 @@
 // Text and artwork are independently written/drawn; mechanics follow the RFD field guide.
 const card = (name, english, count, color, symbol, text, extra = {}) => ({ name, english, count, color, symbol, text, ...extra });
+const CAT_CAPTION = '单张无效，可搭万用猫\n同名2张：偷1张\n同名3张：点名索牌';
 export const CARDS = {
   exploding: card('爆炸猫', 'Exploding Kitten', 6, 'rose', 'bomb', '抽到时必须拆弹，否则出局。拆弹后秘密放回牌堆。', { passive: true }),
   defuse: card('拆弹', 'Defuse', 8, 'mint', 'snip', '爆炸时保命。消耗这张牌，再把爆炸猫秘密插回牌堆。', { passive: true }),
@@ -26,11 +27,11 @@ export const CARDS = {
   mark: card('标记', 'Mark', 4, 'peach', 'target', '随机选对方一张手牌，让大家看见；离开其手牌后取消标记。', { target: true }),
   garbage: card('垃圾回收', 'Garbage Collection', 2, 'mint', 'bin', '包括自己在内，每位有手牌的玩家秘密放回一张，一起洗入牌堆。'),
   catomic: card('猫原子弹', 'Catomic Bomb', 1, 'rose', 'bomb', '取出牌堆中的所有爆炸猫，洗匀其他牌，再把爆炸猫放在顶端。结束一个回合。'),
-  taco: card('塔可猫', 'Tacocat', 4, 'peach', 'taco', '单张没有效果。同名两张随机偷一张，同名三张可以点名索牌。', { cat: true }),
-  rainbow: card('彩虹猫', 'Rainbow-Ralphing Cat', 4, 'plum', 'rainbow', '单张没有效果，可以与同名猫或万用猫组成组合。', { cat: true }),
-  zombie: card('僵尸猫', 'Zombie Cat', 4, 'mint', 'fish', '普通猫牌，没有复活效果。与同名猫或万用猫组成组合。', { cat: true }),
-  beard: card('胡子猫', 'Beard Cat', 4, 'sky', 'bow', '普通猫牌。与同名猫或万用猫组成组合。', { cat: true }),
-  feral: card('万用猫', 'Feral Cat', 6, 'peach', 'paw', '组合时充当任意普通猫牌，不能代替攻击、拆弹等功能牌。', { cat: true }),
+  taco: card('塔可猫', 'Tacocat', 4, 'peach', 'taco', '单张无效。与同名猫或万用猫凑成2张，可从另一位玩家手中选走1张牌；凑成3张可点名索要一种牌，对方没有则拿不到。', { cat: true, caption: CAT_CAPTION }),
+  rainbow: card('彩虹猫', 'Rainbow-Ralphing Cat', 4, 'plum', 'rainbow', '单张无效。与同名猫或万用猫凑成2张，可从另一位玩家手中选走1张牌；凑成3张可点名索要一种牌，对方没有则拿不到。', { cat: true, caption: CAT_CAPTION }),
+  zombie: card('僵尸猫', 'Zombie Cat', 4, 'mint', 'fish', '单张无效，没有复活效果。与同名猫或万用猫凑成2张，可从另一位玩家手中选走1张牌；凑成3张可点名索要一种牌，对方没有则拿不到。', { cat: true, caption: CAT_CAPTION }),
+  beard: card('胡子猫', 'Beard Cat', 4, 'sky', 'bow', '单张无效。与同名猫或万用猫凑成2张，可从另一位玩家手中选走1张牌；凑成3张可点名索要一种牌，对方没有则拿不到。', { cat: true, caption: CAT_CAPTION }),
+  feral: card('万用猫', 'Feral Cat', 6, 'peach', 'paw', '单张无效，只能代替普通猫牌，不能代替攻击、拆弹等功能牌。凑成2张组合可从另一位玩家手中选走1张牌；3张可点名索牌，对方没有则拿不到。', { cat: true, caption: '仅代替普通猫牌\n2张组合：偷1张\n3张组合：点名索牌' }),
 };
 const HAND_ORDER = [
   'defuse', 'streaking', 'nope', // 保命与反制

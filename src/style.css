@@ -133,6 +133,8 @@ nav { display: flex; gap: 8px; align-items: center; }
 .card-title { font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; letter-spacing: -.03em; }.card-picture { background: var(--card-color); border-radius: 9px; margin: 7px 0; height: 103px; flex-shrink: 0; }.card-caption { font-size: 9px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .playing-card.selected { border-color: #9c3855; outline: 3px solid #f0c1ce; }
 .playing-card.small { width: 105px; height: 147px; padding: 7px 5px; border-width: 2px; border-radius: 10px; }.playing-card.small .card-title { font-size: 10px; }.playing-card.small .card-picture { height: 78px; margin: 5px 0; }.playing-card.small .card-caption { font-size: 8px; -webkit-line-clamp: 2; }
+.playing-card.combo-card .card-caption { white-space: pre-line; -webkit-line-clamp: unset; flex-shrink: 0; }
+.playing-card.combo-card .card-picture { flex: 1; min-height: 0; }
 .card-back { padding: 0 !important; background: transparent; border: 0; }.card-back > svg { width: 100%; height: 100%; }
 .position-number { font-size: 10px; background: #514450; color: white; margin: -7px -5px 4px; padding: 3px; }.playing-card:has(.position-number) { height: 170px; }
 .empty-hand { color: var(--muted); font-size: 14px; padding: 35px; }
