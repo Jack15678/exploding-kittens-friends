@@ -1,0 +1,11 @@
+/.dev-memory/
+/.codex/hooks.json
+/docs/dev-memory/
+node_modules/
+dist/
+.local/
+.env
+.env.local
+*.log
+output/
+.playwright-cli/
