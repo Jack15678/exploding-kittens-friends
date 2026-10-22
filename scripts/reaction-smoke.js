@@ -1,4 +1,4 @@
-// Two isolated real PeerJS/WebRTC clients; run against the currently opened game URL.
+// Two isolated real WebSocket relay clients; run against the currently opened game URL.
 async (page) => {
   const contexts = [], errors = [];
   const check = (ok, label) => { if (!ok) throw Error(label); };
@@ -8,7 +8,7 @@ async (page) => {
     const pages = [];
     for (const mobile of [false, true]) {
       const context = await page.context().browser().newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 }, isMobile: mobile, hasTouch: mobile });
-      contexts.push(context); const p = await context.newPage(); pages.push(p);
+      contexts.push(context); await context.addInitScript(() => { window.RTCPeerConnection = class { constructor() { throw Error('WebRTC must not be used'); } }; }); const p = await context.newPage(); pages.push(p);
       p.on('pageerror', e => errors.push(e.message)); await p.goto(page.url());
       await p.getByRole('textbox', { name: '今天怎么称呼你？' }).fill(mobile ? '响应布丁' : '响应桃桃');
     }
@@ -37,6 +37,6 @@ async (page) => {
     await host.getByRole('button', { name: '关闭厨房', exact: true }).click();
     await guest.waitForFunction(() => document.body.dataset.phase === 'home');
     check(!errors.length, errors.join('\n'));
-    return { passed: true, realWebRTC: true, autoPass: true, stableCountdownDOM: true, pageErrors: errors };
+    return { passed: true, realRelay: true, autoPass: true, stableCountdownDOM: true, pageErrors: errors };
   } finally { for (const context of contexts) await context.close(); }
 }

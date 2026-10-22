@@ -1,60 +1,94 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
 import { createRoomTransport } from '../src/room-transport.js';
+import { FakeSocket } from './fake-socket.js';
 
-function setup(t) {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  class Peer extends EventEmitter {
-    static instances = [];
-    constructor() { super(); Peer.instances.push(this); }
-    connect() { this.connection = new EventEmitter(); this.connection.open = false; return this.connection; }
-    reconnect() { this.reconnects = (this.reconnects || 0) + 1; }
-    destroy() { this.destroyed = true; this.emit('close'); }
-  }
-  const issues = [], statuses = [];
-  const transport = createRoomTransport({ Peer, host: false, room: 'TEST2345',
-    onIssue: issue => issues.push(issue), onStatus: status => statuses.push(status) });
+function setup(t, options = {}) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  FakeSocket.instances = [];
+  const statuses = [], messages = [], inbound = [], errors = [], issues = [];
+  let opens = 0;
+  const transport = createRoomTransport({ host: false, room: 'ABCDEFGH', token: 'test-token',
+    url: 'ws://localhost/api/rooms/ABCDEFGH/ws', WebSocket: FakeSocket,
+    retryMs: 10, maxRetryMs: 40, timeoutMs: 100, heartbeatMs: 1000,
+    onStatus: value => statuses.push(value), onData: value => messages.push(value),
+    onOpen: () => opens++, onConnection: (conn, current) => inbound.push({ conn, current }),
+    onIssue: value => issues.push(value), onFatal: value => errors.push(value), ...options });
   t.after(() => transport.stop());
-  return { Peer, issues, statuses, transport };
+  return { transport, statuses, messages, inbound, errors, issues, opens: () => opens };
 }
+const socket = () => FakeSocket.instances.at(-1);
+function connect() { socket().open(); socket().receive({ type: 'ready' }); return socket(); }
 
-test('missing room reports a reason; manual retry can recover and clear it', t => {
-  const { Peer, issues, statuses, transport } = setup(t);
-  const oldPeer = Peer.instances[0]; oldPeer.emit('open');
-  oldPeer.emit('error', { type: 'peer-unavailable' });
-  assert.equal(issues.at(-1), 'peer-unavailable');
-  assert.equal(statuses.at(-1), 'retrying');
-  transport.wake(); t.mock.timers.tick(0);
-  const peer = Peer.instances.at(-1); peer.emit('open');
-  peer.connection.open = true; peer.connection.emit('open'); transport.ready();
-  assert.equal(issues.at(-1), null); assert.equal(statuses.at(-1), 'connected');
-  oldPeer.emit('error', { type: 'network' }); t.mock.timers.tick(60000);
-  assert.equal(Peer.instances.length, 2); assert.equal(issues.at(-1), null);
+test('guest authenticates without URL credentials, and waits for its permitted snapshot', t => {
+  const s = setup(t); const ws = connect();
+  assert.equal(ws.url.includes('test-token'), false);
+  assert.deepEqual(ws.sent[0], { type: 'hello', host: false, token: 'test-token' });
+  assert.deepEqual(s.statuses, ['connecting']); assert.equal(s.opens(), 1);
+  ws.receive({ type: 'data', data: { type: 'state', state: { phase: 'rules' } } });
+  s.transport.ready(); assert.equal(s.statuses.at(-1), 'connected'); assert.equal(s.messages.length, 1);
+});
+test('lost connections back off and discard old listeners; actions are never replayed', t => {
+  const s = setup(t); const old = connect(); s.transport.ready();
+  assert.equal(s.transport.send({ type: 'action' }), true); old.close();
+  assert.equal(s.transport.send({ type: 'action' }), false);
+  t.mock.timers.tick(10); const next = connect();
+  old.receive({ type: 'data', data: 'stale' });
+  assert.deepEqual(s.messages, []); assert.equal(s.opens(), 2);
+  assert.deepEqual(next.sent, [{ type: 'hello', host: false, token: 'test-token' }]);
+  for (const delay of [10, 20, 40, 40]) {
+    socket().close(); const count = FakeSocket.instances.length;
+    t.mock.timers.tick(delay - 1); assert.equal(FakeSocket.instances.length, count);
+    t.mock.timers.tick(1); assert.equal(FakeSocket.instances.length, count + 1);
+  }
+});
+test('host routes snapshots to a single connection and marks disconnected seats offline', t => {
+  const s = setup(t, { host: true }); const ws = connect();
+  assert.equal(s.statuses.at(-1), 'connected');
+  ws.receive({ type: 'joined', id: 'one' }); ws.receive({ type: 'joined', id: 'two' });
+  const first = s.inbound[0]; let closedWhileCurrent = false;
+  first.conn.on('close', () => { closedWhileCurrent = first.current(); });
+  first.conn.send({ private: 'only one' });
+  assert.deepEqual(ws.sent.at(-1), { type: 'send', id: 'one', data: { private: 'only one' } });
+  ws.receive({ type: 'left', id: 'one' }); assert.equal(closedWhileCurrent, true);
+  assert.equal(first.current(), false); assert.equal(first.conn.open, false);
+});
+test('host wake closes old routes, announces reconnect', t => {
+  const s = setup(t, { host: true }); const old = connect();
+  old.receive({ type: 'joined', id: 'one' });
+  s.transport.wake(); assert.equal(s.inbound[0].conn.open, false);
+  assert.equal(s.statuses.at(-1), 'retrying'); connect();
+  s.transport.closeRoom(); assert.equal(socket().sent.at(-1).type, 'close-room');
+});
+test('fatal ownership error stops automatic retries', t => {
+  const s = setup(t); socket().open(); socket().receive({ type: 'fatal', message: 'wrong owner' });
+  t.mock.timers.tick(10000); assert.equal(FakeSocket.instances.length, 1);
+  assert.deepEqual(s.errors, ['wrong owner']); assert.equal(s.transport.send({}), false);
+});
+test('heartbeat detects half-open sockets and stop cancels all recovery', t => {
+  const s = setup(t); connect(); s.transport.ready();
+  t.mock.timers.tick(3000); assert.equal(s.statuses.at(-1), 'retrying');
+  s.transport.stop(); t.mock.timers.tick(10000); assert.equal(FakeSocket.instances.length, 1);
 });
 
-test('slow peer negotiation gets 45 seconds and reports a network timeout', t => {
-  const { Peer, issues } = setup(t);
-  const peer = Peer.instances[0]; peer.emit('open');
-  t.mock.timers.tick(44000);
-  assert.equal(peer.destroyed, undefined); assert.deepEqual(issues, []);
-  t.mock.timers.tick(1000);
-  assert.equal(peer.destroyed, true); assert.equal(issues.at(-1), 'connection-timeout');
+test('relay failure shows a recoverable hint and an authenticated snapshot clears it', t => {
+  const s = setup(t); t.mock.timers.tick(100);
+  assert.equal(s.issues.at(-1), 'connection-lost');
+  s.transport.wake(); connect(); s.transport.ready();
+  assert.equal(s.issues.at(-1), null); assert.equal(s.statuses.at(-1), 'connected');
 });
 
-test('signaling timeout is distinguished from peer negotiation failure', t => {
-  const { issues } = setup(t);
-  t.mock.timers.tick(45000);
-  assert.equal(issues.at(-1), 'signaling');
-});
-
-test('signaling recovery clears the hint without destroying an established data channel', t => {
-  const { Peer, issues, transport } = setup(t);
-  const peer = Peer.instances[0]; peer.emit('open');
-  peer.connection.open = true; peer.connection.emit('open'); transport.ready();
-  peer.emit('disconnected');
-  assert.equal(issues.at(-1), 'signaling'); assert.equal(peer.connection.open, true);
-  transport.wake(); assert.equal(peer.reconnects, 2);
-  peer.emit('open'); t.mock.timers.tick(60000);
-  assert.equal(issues.at(-1), null); assert.equal(Peer.instances.length, 1);
+test('browser network changes disconnect immediately and recover without replaying actions', t => {
+  const networkEvents = new EventTarget(), s = setup(t, { networkEvents });
+  const old = connect(); s.transport.ready();
+  networkEvents.dispatchEvent(new Event('offline'));
+  assert.equal(old.readyState, 3); assert.equal(s.statuses.at(-1), 'retrying');
+  assert.equal(s.transport.send({ type: 'action' }), false);
+  networkEvents.dispatchEvent(new Event('online'));
+  const next = connect(); s.transport.ready();
+  assert.equal(s.statuses.at(-1), 'connected');
+  assert.deepEqual(next.sent, [{ type: 'hello', host: false, token: 'test-token' }]);
+  s.transport.stop();
+  networkEvents.dispatchEvent(new Event('online')); t.mock.timers.tick(10000);
+  assert.equal(FakeSocket.instances.length, 2);
 });

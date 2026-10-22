@@ -14,13 +14,13 @@
     "test:chat": "playwright-cli -s=kitten-check run-code --filename=scripts/chat-smoke.js",
     "test:mobile-cards": "playwright-cli -s=kitten-check run-code --filename=scripts/mobile-cards-smoke.js",
     "test:reaction": "playwright-cli -s=kitten-check run-code --filename=scripts/reaction-smoke.js",
-    "test:close": "playwright-cli -s=kitten-check close"
-  },
-  "dependencies": {
-    "peerjs": "^1.5.5"
+    "test:close": "playwright-cli -s=kitten-check close",
+    "dev:relay": "wrangler dev --ip 127.0.0.1 --port 8788",
+    "deploy": "npm run build && wrangler deploy"
   },
   "devDependencies": {
     "@playwright/cli": "^0.1.22",
-    "vite": "^6.4.4"
+    "vite": "^6.4.4",
+    "wrangler": "4.151.3"
   }
 }

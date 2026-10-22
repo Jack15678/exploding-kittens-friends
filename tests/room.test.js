@@ -174,7 +174,7 @@ test('host allows a slow incoming handshake and clears a recovered connection hi
   assert.equal(conn.open, true);
   conn.emit('data', { type: 'join', token: crypto.randomUUID(), name: '慢一点的小猫', version: 1 });
   assert.equal(room.game.players.length, 2);
-  room.networkIssue('connection-timeout'); assert.match(room.connectionIssue, /两端网络/);
+  room.networkIssue('connection-lost'); assert.match(room.connectionIssue, /房主保持网页打开/);
   room.networkIssue(null); assert.equal(room.connectionIssue, '');
   t.mock.timers.tick(60000); assert.equal(conn.open, true);
 });

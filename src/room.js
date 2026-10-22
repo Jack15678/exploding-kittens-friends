@@ -1,4 +1,3 @@
-import Peer from 'peerjs';
 import { createGame, addPlayer, act, viewFor } from './game.js';
 import { botAction } from './bot.js';
 import { RECIPES } from './recipes.js';
@@ -17,19 +16,8 @@ export function commandIsCurrent(g, message) {
 }
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const roomCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map(n => alphabet[n % alphabet.length]).join('');
-function options() {
-  const urls = (import.meta.env?.VITE_TURN_URL || '').split(',').map(url => url.trim()).filter(Boolean);
-  // PeerJS 1.5.5 defaults still include its discontinued public TURN service.
-  return { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(urls.length ? [{ urls,
-    username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] : [])] } };
-}
 const CONNECTION_ISSUES = {
-  'peer-unavailable': '暂时找不到这个房间。请核对房间码，并让房主保持网页打开。',
-  signaling: '暂时连不上房间联络服务，请检查网络；房主也需要保持网页打开。',
-  'connection-timeout': '两端网络没能建立连接。可以先用电脑建房、手机加入，或换一个网络再试。',
-  'connection-lost': '与房主的连接中断了。正在尝试恢复，请让房主保持网页打开。',
-  'unavailable-id': '房间码正在被另一个页面使用。请关闭重复打开的房主页面。',
-  browser: '当前浏览器无法建立联机连接，请尝试使用最新版 Chrome 或 Safari。',
+  'connection-lost': '暂时连不上房间。请检查网络和房间码，并让房主保持网页打开；正在自动重连。',
 };
 export class Room {
   constructor({ role, name, code = '', saved, onChange, onNotice }) {
@@ -50,9 +38,10 @@ export class Room {
   start() {
     if (this.role === 'practice') { this.publish(); return; }
     if (!ROOM_PATTERN.test(this.room)) throw new Error('房间码需要 8 位字母或数字。');
-    this.transport = createRoomTransport({ Peer, host: this.role === 'host', room: this.room, options: options(),
+    this.transport = createRoomTransport({ host: this.role === 'host', room: this.room, token: this.token,
       onStatus: status => this.networkStatus(status),
       onIssue: issue => this.networkIssue(issue),
+      onFatal: message => { this.stop(true); clearSession(sessionStorage); this.onChange(null); this.onNotice(message); },
       onOpen: () => { this.transport.send({ type: 'join', token: this.token, name: this.name, version: 1 }); },
       onData: message => this.receive(message),
       onConnection: (conn, current) => this.accept(conn, current),
@@ -73,7 +62,7 @@ export class Room {
   }
   networkIssue(issue) {
     if (this.stopped) return;
-    const message = issue ? CONNECTION_ISSUES[issue] || CONNECTION_ISSUES['connection-timeout'] : '';
+    const message = issue ? CONNECTION_ISSUES[issue] || CONNECTION_ISSUES['connection-lost'] : '';
     if (message === this.connectionIssue) return;
     this.connectionIssue = message; this.changed();
   }
@@ -251,6 +240,7 @@ export class Room {
     if (this.stopped) return;
     if (preserve) this.persist();
     if (!preserve && this.role === 'host') for (const conn of this.connections.values()) try { conn.send({ type: 'closed' }); } catch {}
+    if (!preserve && this.role === 'host') this.transport?.closeRoom();
     this.stopped = true; clearTimeout(this.botTimer); clearTimeout(this.reactionTimer);
     this.transport?.stop(); this.connections.clear();
     if (!preserve) clearSession(sessionStorage);

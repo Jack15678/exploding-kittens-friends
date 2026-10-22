@@ -13,7 +13,7 @@ async (page) => {
     const pages = [];
     for (const mobile of [false, true]) {
       const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: mobile, isMobile: mobile });
-      contexts.push(context); const p = await context.newPage(); pages.push(p);
+      contexts.push(context); await context.addInitScript(() => { window.RTCPeerConnection = class { constructor() { throw Error('WebRTC must not be used'); } }; }); const p = await context.newPage(); pages.push(p);
       p.on('pageerror', e => errors.push(e.message)); await p.goto(page.url());
       await p.getByRole('textbox', { name: '今天怎么称呼你？' }).fill(mobile ? '聊天布丁' : '聊天桃桃');
     }
@@ -81,6 +81,6 @@ async (page) => {
     check(await guest.locator('#room-chat').isHidden(), 'leaving clears the chat UI');
     check(await saved(guest) === null, 'leaving clears chat storage');
     check(errors.length === 0, errors.join('\n'));
-    return { passed: true, realWebRTC: true, peers: 2, messages: chat.length, autoCollapse: true, draftAndIME: true, refresh: true, pageErrors: errors };
+    return { passed: true, realRelay: true, peers: 2, messages: chat.length, autoCollapse: true, draftAndIME: true, refresh: true, pageErrors: errors };
   } finally { for (const context of contexts) await context.close(); }
 }
